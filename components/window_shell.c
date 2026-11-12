@@ -18,7 +18,8 @@
  * settings overlay -> close -> exit).
  */
 #include "window_shell.h"
-#include "settings_panel.h"
+/* 设置页只有一份实现：引擎 app_shell 里的节点化组件（头文件同源）。 */
+#include "zcsr/ui_modern_settings.h"
 #include "zcsr/platform.h"
 #include "zcsr/gl_render.h"
 #include "zcsr/input.h"
