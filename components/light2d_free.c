@@ -631,47 +631,6 @@ static void light_module_shutdown(zcsr_gl_renderer* r, void* user)
     printf("[light] module shutdown\n");
 }
 
-static void dbg_insets(light_state* s, zcsr_gl_renderer* r, int cw, int ch)
-{
-    const float w = 200.0f;
-    const float h = 112.0f;
-    const float x0 = 8.0f;
-    const float y0 = (float)ch - h - 8.0f;
-    const float verts[12] = { -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1 };
-    GLint viewport[4];
-    GLint blend_was = 0;
-    zcsr_gl_l2d_target gb;
-    int which;
-    (void)cw;
-
-    /* end_lighting popped the pipeline's saved bindings — re-bind the
-     * G-buffer textures (units 4..8) before sampling the channels. */
-    gb = zcsr_light2d_gbuffer_handle(s->ctx);
-    if (gb == ZCSR_GL_L2D_TARGET_INVALID) return;
-    if (!zcsr_gl_l2d_bind_target_textures(r, gb, 4)) return;
-    glGetIntegerv(GL_VIEWPORT, viewport);
-    glGetIntegerv(GL_BLEND, &blend_was);
-    glUseProgram(s->dbg_prog);
-    if (s->dbg_loc_pos >= 0) glUniform1i(s->dbg_loc_pos, 5);
-    if (s->dbg_loc_nrm >= 0) glUniform1i(s->dbg_loc_nrm, 6);
-    if (s->dbg_loc_light >= 0) glUniform1i(s->dbg_loc_light, 8);
-    glDisable(GL_BLEND);
-    glBindVertexArray(s->dbg_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, s->dbg_vbo);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-    for (which = 0; which < 3; ++which) {
-        if (s->dbg_loc_dst >= 0) glUniform1i(s->dbg_loc_dst, which);
-        /* which==2 shows the light buffer: bind_target_textures put the white
-         * shadow placeholder on unit 8 — rebind the real accumulation texture */
-        if (which == 2) (void)zcsr_gl_l2d_bind_light_texture(r, 8);
-        glViewport((GLint)(x0 + (float)which * (w + 8.0f)), (GLint)y0,
-                   (GLsizei)w, (GLsizei)h);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-    }
-    glBindVertexArray(0);
-    glViewport(viewport[0], viewport[1], (GLsizei)viewport[2], (GLsizei)viewport[3]);
-    if (blend_was != 0) glEnable(GL_BLEND);
-}
 
 static void light_module_frame(zcsr_gl_renderer* r, int cw, int ch, void* user)
 {
@@ -790,57 +749,6 @@ static void light_module_frame(zcsr_gl_renderer* r, int cw, int ch, void* user)
         return;
     }
 
-    /* GPU ray-shadow pixel verification: autoquit frame 80 runs after the
-     * LOW->HIGH quality switch (frame 60), so the deferred ray-shadow path
-     * is active. Read back the COMPOSITED default-framebuffer pixels at two
-     * ground points with identical albedo/normal:
-     *   P_lit=(1,0,0)  — ray L->P does NOT cross the box footprint
-     *   P_shadow=(4,0,0) — ray L->P crosses the box at z in [0.75,1.5]
-     * Camera center=(4,0), PPU=96: screen_x = (wx-4)*96+cw/2, screen_y=ch/2.
-     * glReadPixels uses bottom-left origin: gl_y = ch - screen_y. */
-    /* dbg_insets(s, r, cw, ch); // 调试输出暂时关掉，因为它会直接画到屏幕上 */
-
-    /* TODO: 调试代码暂时注释掉，因为它会直接 glBindFramebuffer(0) 切回 back buffer，
-     * 导致 RTT 渲染目标被污染，光影溢出到整个编辑器窗口
-     * 等实现正确的像素读取（保存/恢复 framebuffer 绑定）后再打开
-     */
-#if 0
-    if (s->autoquit && frame_index == 30 &&
-        s->quality == (int)ZCSR_LIGHT_QUALITY_HIGH) {
-        /* GPU ray-shadow pixel verification on the composited default FB.
-         * Shadow band for L=(0,0,3), box x[2,3] H=2 is x in [2,9] on the floor.
-         * P_lit=(-1.5,0,0) — left of the box, ray never crosses footprint.
-         * P_shadow=(6.5,0,0) — inside the shadow band, ray crosses the box.
-         * Both on the same y=0 ground strip, identical albedo/normal. */
-        unsigned char lit_px[9*4], sha_px[9*4];
-        float lit_sum = 0.0f, sha_sum = 0.0f;
-        int gi;
-        const int lit_sx = (int)((-1.5f - s->cam.center_x) * s->cam.px_per_unit + cw * 0.5f);
-        const int sha_sx = (int)((6.5f - s->cam.center_x) * s->cam.px_per_unit + cw * 0.5f);
-        const int gl_y = ch / 2;
-        glFinish();
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glReadPixels(lit_sx - 1, gl_y - 1, 3, 3, GL_RGBA, GL_UNSIGNED_BYTE, lit_px);
-        glReadPixels(sha_sx - 1, gl_y - 1, 3, 3, GL_RGBA, GL_UNSIGNED_BYTE, sha_px);
-        for (gi = 0; gi < 9; ++gi) {
-            lit_sum += 0.2126f*lit_px[gi*4+0] + 0.7152f*lit_px[gi*4+1] + 0.0722f*lit_px[gi*4+2];
-            sha_sum += 0.2126f*sha_px[gi*4+0] + 0.7152f*sha_px[gi*4+1] + 0.0722f*sha_px[gi*4+2];
-        }
-        lit_sum /= 9.0f;
-        sha_sum /= 9.0f;
-        printf("[gpu_shadow] P_lit=(-1.5,0,0) screen=(%d,%d) lum=%.1f RGB=(%d,%d,%d)\n",
-               lit_sx, gl_y, lit_sum, lit_px[4], lit_px[5], lit_px[6]);
-        printf("[gpu_shadow] P_shadow=(6.5,0,0) screen=(%d,%d) lum=%.1f RGB=(%d,%d,%d)\n",
-               sha_sx, gl_y, sha_sum, sha_px[4], sha_px[5], sha_px[6]);
-        if (sha_sum < lit_sum * 0.7f) {
-            printf("[gpu_shadow] PASS: shadow point dimmer than lit control (%.1f < %.1f*0.7)\n",
-                   sha_sum, lit_sum);
-        } else {
-            printf("[gpu_shadow] FAIL: shadow point not dimmer enough (sha=%.1f lit=%.1f)\n",
-                   sha_sum, lit_sum);
-        }
-    }
-#endif
 
     /* debug 信息输出到终端，不渲染到画面 */
     if ((s->frame_index % 60) == 0) {
