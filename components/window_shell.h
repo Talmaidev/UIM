@@ -15,10 +15,17 @@
  *   return zcsr_window_main(mods, 1, argc, argv);
  */
 #include "zcsr/gl_render.h"
+#include "zcsr/ui_game_settings.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* 用与运行时 shell 完全相同的一份设置页数据（Video/Graphics/Audio/Interface）
+ * 建一个独立实例，供编辑器内嵌显示、逐控件改位置。
+ * buf 至少 8192 字节（与运行时同一份），返回 NULL 表示配置无效。 */
+zcsr_game_settings* zcsr_window_settings_create(void* buf, size_t bytes,
+                                               int x, int y, int w, int h);
 
 /* One pluggable test module = one big button on the home screen.
  * All callbacks may be NULL except frame. r is the shared renderer; cw/ch are

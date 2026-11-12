@@ -241,6 +241,7 @@ static unsigned char renderer_buf[8 * 1024 * 1024];
 static unsigned char input_buf[4 * 1024];
 static unsigned char inputext_buf[8 * 1024];
 static unsigned char settings_buf[8192];
+static zcsr_game_settings_tab w_tabs[4];
 static unsigned char panel_zero[SHELL_PANEL_TEX_MAX_W * SHELL_PANEL_TEX_MAX_H * 4];
 
 static zcsr_surface*     w_surface  = NULL;
@@ -544,12 +545,38 @@ static void render_settings_overlay(zcsr_gl_renderer* r) {
                                1.0f, 1.0f, 1.0f, opacity);
 }
 
+/* 设置页的四张标签页指向同一份静态数据（g_video/g_graphics/g_audio/g_interface）。
+ * 运行时 shell 和编辑器内嵌页都用这一个函数，避免两份设置数据各自漂移。 */
+static void build_setting_tabs(void) {
+    init_display_list();
+    init_items();
+    w_tabs[0] = (zcsr_game_settings_tab){ .name="Video",     .items=g_video,     .count=V_COUNT };
+    w_tabs[1] = (zcsr_game_settings_tab){ .name="Graphics",  .items=g_graphics,  .count=G_COUNT };
+    w_tabs[2] = (zcsr_game_settings_tab){ .name="Audio",     .items=g_audio,     .count=A_COUNT };
+    w_tabs[3] = (zcsr_game_settings_tab){ .name="Interface", .items=g_interface, .count=I_COUNT };
+}
+
+zcsr_game_settings* zcsr_window_settings_create(void* buf, size_t bytes,
+                                               int x, int y, int w, int h) {
+    build_setting_tabs();
+    return zcsr_game_settings_create(buf, bytes,
+        &(zcsr_game_settings_config){
+            .tabs        = w_tabs,
+            .tab_count   = 4,
+            .x           = x,
+            .y           = y,
+            .width       = w,
+            .height      = h,
+            .item_height = 34,
+            .text_scale  = 1.4f,
+        });
+}
+
 /* ================================================================== */
 /*  Shell main loop                                                    */
 /* ================================================================== */
 int zcsr_window_main(const zcsr_window_module* modules, int module_count,
                      int argc, char** argv) {
-    static zcsr_game_settings_tab tabs[4];
     int i;
 
     w_autoquit = (argc > 1 && argv != NULL && argv[1] != NULL &&
@@ -563,8 +590,7 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
     printf("black home screen + category buttons; SETTINGS built in; %d module(s)\n",
            module_count);
 
-    init_display_list();
-    init_items();
+    build_setting_tabs();
 
     w_surface = zcsr_surface_create("zcsr window shell",
                                     (zcsr_rect){ 80, 80, SHELL_W, SHELL_H });
@@ -595,21 +621,8 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
     zcsr_surface_get_client_size(w_surface, &w_cw, &w_ch);
     if (w_cw <= 0 || w_ch <= 0) { w_cw = SHELL_W; w_ch = SHELL_H; }
 
-    tabs[0] = (zcsr_game_settings_tab){ .name="Video",     .items=g_video,     .count=V_COUNT };
-    tabs[1] = (zcsr_game_settings_tab){ .name="Graphics",  .items=g_graphics,  .count=G_COUNT };
-    tabs[2] = (zcsr_game_settings_tab){ .name="Audio",     .items=g_audio,     .count=A_COUNT };
-    tabs[3] = (zcsr_game_settings_tab){ .name="Interface", .items=g_interface, .count=I_COUNT };
-    w_settings = zcsr_game_settings_create(settings_buf, sizeof(settings_buf),
-        &(zcsr_game_settings_config){
-            .tabs        = tabs,
-            .tab_count   = 4,
-            .x           = 200,
-            .y           = 90,
-            .width       = 880,
-            .height      = 540,
-            .item_height = 34,
-            .text_scale  = 1.4f,
-        });
+    w_settings = zcsr_window_settings_create(settings_buf, sizeof(settings_buf),
+                                             200, 90, 880, 540);
     if (!w_settings) { fprintf(stderr, "FAIL: settings create\n"); goto cleanup; }
 
     panel_tex_ensure();
