@@ -358,6 +358,18 @@ static void apply_settings(void) {
     printf("[apply] interface: settings opacity %.0f%% dim %.0f%%\n",
            g_interface[I_OPACITY].slider_value, g_interface[I_DIM].slider_value);
 
+    /* Texture Quality 以前只是存了个索引。现在它真的改默认采样：
+     * Low -> GL_NEAREST（像素风/省带宽），Medium 及以上 -> GL_LINEAR。
+     * 只影响此后创建的纹理，已有的纹理保持各自设置（图集/面板 FBO 自己指定）。 */
+    {
+        static const char* tex_names[] = { "Low", "Medium", "High", "Ultra" };
+        int ti = g_graphics[G_TEXTURE].value;
+        bool linear = (ti > 0);
+        zcsr_gl_set_texture_filter_default(w_renderer, linear);
+        printf("[apply] texture quality: %s -> default filter %s\n",
+               tex_names[ti < 0 || ti > 3 ? 0 : ti], linear ? "LINEAR" : "NEAREST");
+    }
+
     {
         int cw = 0, ch = 0;
         zcsr_surface_get_client_size(w_surface, &cw, &ch);
@@ -611,23 +623,19 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
     zcsr_surface_set_client_size(w_surface, SHELL_W, SHELL_H);
 
     w_renderer = zcsr_gl_create(w_surface, renderer_buf, sizeof(renderer_buf));
-    /* 字体注入点（SDL_ttf 式）：游戏自带 TTF，通过环境变量或直接调用
-     * zcsr_gl_font_from_file / zcsr_gl_set_font_atlas 绑定，引擎与设置页不用改。
-     * 不设置时保持内置 8x8 位图字体。 */
-    {
-        const char* ttf = getenv("ZCSR_FONT_TTF");
-        if (ttf && ttf[0]) {
-            /* TTF 字节(约1MB) + zcsr_font 副本(约1.1MB) + atlas(4.26MB)，6MB 不够 */
-            static unsigned char w_font_buf[16u * 1024u * 1024u];
-            const char* pxs = getenv("ZCSR_FONT_PX");
-            int px = pxs ? atoi(pxs) : 16;
-            if (px <= 0) px = 16;
-            if (w_renderer &&
-                zcsr_gl_font_from_file(w_renderer, ttf, px, w_font_buf, sizeof(w_font_buf))) {
-                printf("[font] ttf bound: %s @ %dpx\n", ttf, px);
-            } else {
-                printf("[font] ttf load failed, falling back to builtin 8x8: %s\n", ttf);
-            }
+    /* 默认字体：真实 TTF，8x8 只作兜底。
+     * 解析顺序 ZCSR_FONT_TTF -> 系统 UI 字体（segoeui/arial/DejaVu）。
+     * 游戏想用自带字体：zcsr_gl_font_from_file(自己的路径)，引擎不用改。 */
+    if (w_renderer) {
+        /* TTF 字节(约1MB) + zcsr_font 副本(约1.1MB) + atlas(4.26MB)，6MB 不够 */
+        static unsigned char w_font_buf[16u * 1024u * 1024u];
+        const char* pxs = getenv("ZCSR_FONT_PX");
+        int px = pxs ? atoi(pxs) : 16;
+        if (px <= 0) px = 16;
+        if (zcsr_gl_font_default(w_renderer, px, w_font_buf, sizeof(w_font_buf))) {
+            printf("[font] default TTF bound @ %dpx\n", px);
+        } else {
+            printf("[font] no system TTF found, using builtin 8x8\n");
         }
     }
     if (!w_renderer) {
@@ -649,6 +657,15 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
     w_settings = zcsr_window_settings_create(settings_buf, sizeof(settings_buf),
                                              200, 90, 880, 540);
     if (!w_settings) { fprintf(stderr, "FAIL: settings create\n"); goto cleanup; }
+
+    /* 编辑器退出编辑态写下的几何覆盖，运行时读回同一个文件 —— 这样"在编辑器里挪过的
+     * 按钮"真的出现在游戏里，而不是只留在编辑器会话。文件缺失就保持公式布局。 */
+    {
+        const char* layout_path = getenv("ZCSR_LAYOUT_PATH");
+        if (!layout_path || !layout_path[0]) layout_path = "settings_layout.txt";
+        if (zcsr_game_settings_load_overrides(w_settings, layout_path))
+            printf("[settings] layout overrides loaded: %s\n", layout_path);
+    }
 
     panel_tex_ensure();
 
