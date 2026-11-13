@@ -26,7 +26,9 @@
 #include "zcsr/input_ext.h"
 #include "zcsr/window_event.h"
 
+#include "zcsr/clock.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if defined(_WIN32)
@@ -227,10 +229,10 @@ static void init_items(void) {
         .type=ZCSR_GAME_SETTINGS_DROPDOWN, .options=indev_opts, .option_count=3, .value=0 };
 
     g_interface[I_OPACITY] = (zcsr_game_settings_item){
-        .label="Settings Opacity", .description="How opaque the settings overlay panel is over the page. Takes effect on Apply.",
+        .label="Settings Opacity", .description="How opaque the settings overlay panel is over the page. Takes effect immediately.",
         .type=ZCSR_GAME_SETTINGS_SLIDER, .min=30.0f,.max=100.0f,.step=5.0f,.slider_value=100.0f };
     g_interface[I_DIM] = (zcsr_game_settings_item){
-        .label="Background Dim", .description="How dark the page behind the settings overlay is. Takes effect on Apply.",
+        .label="Background Dim", .description="How dark the page behind the settings overlay is. Takes effect immediately.",
         .type=ZCSR_GAME_SETTINGS_SLIDER, .min=0.0f,.max=90.0f,.step=1.0f,.slider_value=62.0f };
 }
 
@@ -512,9 +514,12 @@ static void render_settings_overlay(zcsr_gl_renderer* r) {
         panel_tex_ensure();
     }
 
-    if (w_panel_tex == 0) {
-        /* fallback: flush the page, then render the panel directly (no translucency) */
+    if (w_panel_tex == 0 || opacity >= 0.99f) {
+        /* 不透明（默认 100%）直接画在窗口上：省掉 FBO 往返 + 纹理采样一层，
+         * 文字就是像素本身，不存在"切换时糊一下/慢一帧"的观感。
+         * 只有玩家把 Interface 的 Settings Opacity 调低时才走离屏合成。 */
         zcsr_gl_flush(r);
+        zcsr_gl_fill_rect(r, 0.0f, 0.0f, (float)w_cw, (float)w_ch, 0.0f, 0.0f, 0.0f, dim);
         zcsr_game_settings_set_bounds(w_settings, px, py, pw, ph);
         zcsr_game_settings_render(w_settings, r);
         return;
@@ -578,6 +583,7 @@ zcsr_game_settings* zcsr_window_settings_create(void* buf, size_t bytes,
 int zcsr_window_main(const zcsr_window_module* modules, int module_count,
                      int argc, char** argv) {
     int i;
+    uint64_t frame_start_ns = zcsr_clock_now_ns();
 
     w_autoquit = (argc > 1 && argv != NULL && argv[1] != NULL &&
                   strcmp(argv[1], "autoquit") == 0);
@@ -605,6 +611,25 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
     zcsr_surface_set_client_size(w_surface, SHELL_W, SHELL_H);
 
     w_renderer = zcsr_gl_create(w_surface, renderer_buf, sizeof(renderer_buf));
+    /* 字体注入点（SDL_ttf 式）：游戏自带 TTF，通过环境变量或直接调用
+     * zcsr_gl_font_from_file / zcsr_gl_set_font_atlas 绑定，引擎与设置页不用改。
+     * 不设置时保持内置 8x8 位图字体。 */
+    {
+        const char* ttf = getenv("ZCSR_FONT_TTF");
+        if (ttf && ttf[0]) {
+            /* TTF 字节(约1MB) + zcsr_font 副本(约1.1MB) + atlas(4.26MB)，6MB 不够 */
+            static unsigned char w_font_buf[16u * 1024u * 1024u];
+            const char* pxs = getenv("ZCSR_FONT_PX");
+            int px = pxs ? atoi(pxs) : 16;
+            if (px <= 0) px = 16;
+            if (w_renderer &&
+                zcsr_gl_font_from_file(w_renderer, ttf, px, w_font_buf, sizeof(w_font_buf))) {
+                printf("[font] ttf bound: %s @ %dpx\n", ttf, px);
+            } else {
+                printf("[font] ttf load failed, falling back to builtin 8x8: %s\n", ttf);
+            }
+        }
+    }
     if (!w_renderer) {
         fprintf(stderr, "FAIL: no renderer\n");
         zcsr_surface_destroy(w_surface);
@@ -772,7 +797,22 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
 
         zcsr_gl_flush(w_renderer);
         zcsr_gl_present(w_renderer);
-        shell_sleep_ms(16);
+
+        /* 帧率上限真正生效：按 Video 的 Frame Rate Limit 补足剩余时间。
+         * 之前无条件 sleep(16) —— 设置里的这一项是纯装饰，而且把上限写死成 ~62fps。 */
+        {
+            static const int fps_targets[] = { 30, 60, 120, 144, 0 }; /* 0 = Unlimited */
+            int idx = g_video[V_FRAMELIMIT].value;
+            uint64_t now = zcsr_clock_now_ns();
+            uint64_t budget_ns = 0;
+            if (idx >= 0 && idx < 5 && fps_targets[idx] > 0)
+                budget_ns = 1000000000ull / (uint64_t)fps_targets[idx];
+            if (budget_ns > 0 && now - frame_start_ns < budget_ns) {
+                uint64_t left_ms = (budget_ns - (now - frame_start_ns)) / 1000000ull;
+                if (left_ms > 0) shell_sleep_ms((int)left_ms);
+            }
+            frame_start_ns = zcsr_clock_now_ns();
+        }
         ++w_frame;
     }
 
