@@ -805,6 +805,36 @@ const zcsr_window_module light2d_module = {
 };
 
 /* light2d 模块初始化函数 */
+/* ---- 设置页的模块级落点 ------------------------------------------------
+ * 设置页只存值；Graphics 的阴影/光照分辨率/后处理、Default FOV 要落在这里，
+ * 否则就是"有 UI、有存盘、画面不变"。 */
+bool zcsr_light2d_module_set_render_options(int shadows, int light_scale_pct,
+                                            int bloom, int ray_shadows) {
+    if (!g_light.ctx) return false;
+    zcsr_light2d_options opt;
+    zcsr_light2d_get_options(g_light.ctx, &opt);
+    if (light_scale_pct != 25 && light_scale_pct != 50 && light_scale_pct != 100)
+        light_scale_pct = 50;
+    opt.shadows = shadows != 0;
+    opt.light_scale_pct = light_scale_pct;
+    opt.bloom = bloom != 0;
+    opt.ray_shadows = ray_shadows != 0;
+    return zcsr_light2d_set_options(g_light.ctx, &opt);
+}
+
+/* FOV 在 2.5D 正交切片里等价于俯仰角：FOV 大 -> 看得平 -> pitch 小。
+ * 90° 对应现有 SHEAR_DEFAULT（pitch≈63.4°），按 0.3°/度线性拉开。 */
+bool zcsr_light2d_module_set_fov_deg(float fov_deg) {
+    if (fov_deg < 30.0f) fov_deg = 30.0f;
+    if (fov_deg > 150.0f) fov_deg = 150.0f;
+    zcsr_camera_set_pitch_deg(&g_light.cam, 63.4f + (90.0f - fov_deg) * 0.3f);
+    return true;
+}
+
+float zcsr_light2d_module_get_pitch_deg(void) {
+    return zcsr_camera_get_pitch_deg(&g_light.cam);
+}
+
 void light2d_module_init(void)
 {
     memset(&g_light, 0, sizeof(g_light));

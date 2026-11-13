@@ -56,3 +56,9 @@ void zcsr_window_get_mouse_position(int* x, int* y);
 #endif
 
 #endif /* ZCSR_WINDOW_SHELL_H */
+
+/* 设置页 -> 模块落点（Graphics / Default FOV）。模块未 init 时返回 false。 */
+bool  zcsr_light2d_module_set_render_options(int shadows, int light_scale_pct,
+                                             int bloom, int ray_shadows);
+bool  zcsr_light2d_module_set_fov_deg(float fov_deg);
+float zcsr_light2d_module_get_pitch_deg(void);
