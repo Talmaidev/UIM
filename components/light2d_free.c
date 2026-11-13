@@ -18,6 +18,7 @@
 #include "zcsr/transform.h"
 
 #include <glad/glad.h>
+#include <stdlib.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -535,7 +536,16 @@ static bool light_module_init(zcsr_gl_renderer* r, int cw, int ch, void* user)
     zcsr_camera_init(&s->cam, cw, ch, 4.0f, 0.0f, ppu, SHEAR_DEFAULT);
     /* 视角高度可调：SHEAR_DEFAULT=0.5 等于俯仰 63.4 度（偏高的调试视角）。
      * 真实游戏常要压低到 50-55 度，ZCSR_VIEW_PITCH 直接给角度。 */
-    { const char* pv = getenv("ZCSR_VIEW_PITCH"); if (pv && pv[0]) zcsr_camera_set_pitch_deg(&s->cam, (float)atof(pv)); }
+    {
+        const char* pv = getenv("ZCSR_VIEW_PITCH");
+        if (pv && pv[0]) {
+            char* end;
+            double v = strtod(pv, &end);
+            if (end && *end == '\0' && v > 0.0 && v < 90.0) {
+                zcsr_camera_set_pitch_deg(&s->cam, (float)v);
+            }
+        }
+    }
     zcsr_light2d_set_camera(s->ctx, &s->cam);
 
     opt.shadows = true;
@@ -857,5 +867,14 @@ void light2d_module_init(void)
     g_light.effects_quality = 1;
     g_light.view_distance = 100.0f;
     zcsr_camera_init(&g_light.cam, 1280, 800, 4.0f, 0.0f, PPU_DEFAULT, SHEAR_DEFAULT);
-    { const char* pv = getenv("ZCSR_VIEW_PITCH"); if (pv && pv[0]) zcsr_camera_set_pitch_deg(&g_light.cam, (float)atof(pv)); }
+    {
+        const char* pv = getenv("ZCSR_VIEW_PITCH");
+        if (pv && pv[0]) {
+            char* end;
+            double v = strtod(pv, &end);
+            if (end && *end == '\0' && v > 0.0 && v < 90.0) {
+                zcsr_camera_set_pitch_deg(&g_light.cam, (float)v);
+            }
+        }
+    }
 }

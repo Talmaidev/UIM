@@ -649,8 +649,12 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
         /* TTF 字节(约1MB) + zcsr_font 副本(约1.1MB) + atlas(4.26MB)，6MB 不够 */
         static unsigned char w_font_buf[16u * 1024u * 1024u];
         const char* pxs = getenv("ZCSR_FONT_PX");
-        int px = pxs ? atoi(pxs) : 16;
-        if (px <= 0) px = 16;
+        int px = 16;
+        if (pxs && pxs[0]) {
+            char* end;
+            long v = strtol(pxs, &end, 10);
+            if (end && *end == '\0' && v > 0 && v <= 512) px = (int)v;
+        }
         if (zcsr_gl_font_default(w_renderer, px, w_font_buf, sizeof(w_font_buf))) {
             printf("[font] default TTF bound @ %dpx\n", px);
         } else {
