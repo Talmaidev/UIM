@@ -62,3 +62,4 @@ bool  zcsr_light2d_module_set_render_options(int shadows, int light_scale_pct,
                                              int bloom, int ray_shadows);
 bool  zcsr_light2d_module_set_fov_deg(float fov_deg);
 float zcsr_light2d_module_get_pitch_deg(void);
+bool  zcsr_light2d_module_set_scene(int effects, float view_distance);

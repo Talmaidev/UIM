@@ -55,6 +55,8 @@ typedef struct {
     int mouse_seen;
     int last_mouse_x, last_mouse_y;
     float light_z;
+    int effects_quality;     /* 0 = 关装饰件（rugs），1 = 开 */
+    float view_distance;     /* 0..100，越大看得越远（zoom out） */
     zcsr_gl_texture rug_tex; /* programmatic 64x64 fixture, host-owned */
     zcsr_gl_texture nmap_albedo_tex; /* solid albedo for the nmap demo */
     zcsr_gl_texture nmap_tex;        /* 64x64 tangent-space normal map */
@@ -414,7 +416,7 @@ static void draw_scene(light_state* s, zcsr_gl_renderer* r, int cw, int ch,
      * BR quadrant — same world size, different texture region proves the UV
      * path. The 8px transparent frame must DISCARD, leaving the floor's
      * earlier G-buffer write intact beneath both rugs. */
-    if (!low && s->rug_tex != 0u) {
+    if (!low && s->effects_quality && s->rug_tex != 0u) {
         const float tint[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
         const float emiss[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
         const float up[3] = { 0.0f, 0.0f, 1.0f };
@@ -805,6 +807,18 @@ const zcsr_window_module light2d_module = {
 };
 
 /* light2d 模块初始化函数 */
+/* Effects Quality / View Distance 的真落点：
+ * effects=0 时跳过 Q4 纹理地毯（draw_scene 里唯一可省的装饰件）；
+ * view_distance 换算成相机 ppu：0..100 -> ppu 30..15，越大视野越远。 */
+bool zcsr_light2d_module_set_scene(int effects, float view_distance) {
+    if (view_distance < 0.0f) view_distance = 0.0f;
+    if (view_distance > 100.0f) view_distance = 100.0f;
+    g_light.effects_quality = effects != 0;
+    g_light.view_distance = view_distance;
+    zcsr_camera_set_zoom(&g_light.cam, 30.0f - 0.15f * view_distance);
+    return true;
+}
+
 /* ---- 设置页的模块级落点 ------------------------------------------------
  * 设置页只存值；Graphics 的阴影/光照分辨率/后处理、Default FOV 要落在这里，
  * 否则就是"有 UI、有存盘、画面不变"。 */
@@ -840,6 +854,8 @@ void light2d_module_init(void)
     memset(&g_light, 0, sizeof(g_light));
     g_light.quality = (int)ZCSR_LIGHT_QUALITY_HIGH;
     g_light.light_z = LIGHT_Z_DEFAULT;
+    g_light.effects_quality = 1;
+    g_light.view_distance = 100.0f;
     zcsr_camera_init(&g_light.cam, 1280, 800, 4.0f, 0.0f, PPU_DEFAULT, SHEAR_DEFAULT);
     { const char* pv = getenv("ZCSR_VIEW_PITCH"); if (pv && pv[0]) zcsr_camera_set_pitch_deg(&g_light.cam, (float)atof(pv)); }
 }
