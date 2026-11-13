@@ -756,6 +756,9 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
                 if (ev.key == 'S' || ev.key == 's') { open_settings_overlay(); continue; }
             } else {
                 bool consumed = false;
+                /* 模块里也能唤出设置页：设置是覆盖在当前 window 上的一层，
+                 * 关掉之后回到这个 window（不是回不掉、也不是回首页） */
+                if (ev.key == 'S' || ev.key == 's') { open_settings_overlay(); continue; }
                 if (w_modules[w_active_module].key != NULL) {
                     consumed = w_modules[w_active_module].key((int)ev.key,
                                                              w_modules[w_active_module].user);
