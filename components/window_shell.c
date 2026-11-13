@@ -560,6 +560,9 @@ static void render_settings_overlay(zcsr_gl_renderer* r) {
                                (float)px, (float)py, (float)pw, (float)ph,
                                0.0f, 1.0f, 1.0f, 0.0f,
                                1.0f, 1.0f, 1.0f, opacity);
+
+    /* 离屏渲染把 bounds 挪到了 (0,0)：交还成窗口坐标，否则下一帧鼠标命中会再偏一次 */
+    zcsr_game_settings_set_bounds(w_settings, px, py, pw, ph);
 }
 
 /* 设置页的四张标签页指向同一份静态数据（g_video/g_graphics/g_audio/g_interface）。
@@ -697,17 +700,12 @@ int zcsr_window_main(const zcsr_window_module* modules, int module_count,
 
         /* ---- mouse routing ---- */
         if (w_settings_open) {
-            /* panel logic runs in overlay-local coordinates (rendered from (0,0)) */
-            int px, py, pw, ph;
-            layout_settings_overlay(&px, &py, &pw, &ph);
-            zcsr_mouse_state local = mst;
-            local.x = mst.x - px;
-            local.y = mst.y - py;
-            {
-                int maction = zcsr_game_settings_update_mouse(w_settings, &local);
-                if (maction == 1) close_settings(true);
-                else if (maction == -1) close_settings(false);
-            }
+            /* 页面自己的命中测试用的是"绝对窗口坐标"（内部所有矩形都是 s->x + 偏移），
+             * 所以这里必须原样喂入，不能再减一次 px/py —— 之前减了，点击全部偏掉
+             * (-200,-90)，表现就是 Apply / Cancel / Reset 和 tab 点了没反应。 */
+            int maction = zcsr_game_settings_update_mouse(w_settings, &mst);
+            if (maction == 1) close_settings(true);
+            else if (maction == -1) close_settings(false);
         } else {
             bool clicked = (mst.buttons & ZCSR_MOUSE_LEFT) != 0 &&
                            (w_prev_mouse_buttons & ZCSR_MOUSE_LEFT) == 0;
