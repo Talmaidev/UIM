@@ -20,6 +20,7 @@
 #include "window_shell.h"
 /* 设置页只有一份实现：引擎 app_shell 里的节点化组件（头文件同源）。 */
 #include "zcsr/ui_game_settings.h"
+#include "zcsr/audio_mix.h"
 #include "zcsr/platform.h"
 #include "zcsr/gl_render.h"
 #include "zcsr/input.h"
@@ -115,7 +116,12 @@ enum {
     A_COUNT,
 };
 
-static const char* outdev_opts[] = { "Default", "Speakers", "Headphones" };
+/* Output Device 的真实端点名：默认 + 枚举到的设备（最多 4 个）。
+ * 值 0 = 系统默认；1..n 对应 g_outdev_ids[n-1] 的端点 ID。 */
+static char g_outdev_names[4][ZCSR_MIX_DEVICE_NAME_CAP];
+static char g_outdev_ids[4][ZCSR_MIX_DEVICE_ID_CAP];
+static int  g_outdev_count = 0;
+static const char* outdev_opts[5] = { "Default", "", "", "", "" };
 static const char* indev_opts[]  = { "Default", "Microphone", "Line In" };
 
 static zcsr_game_settings_item g_audio[A_COUNT];
@@ -150,6 +156,16 @@ static void init_display_list(void) {
 }
 
 static void init_items(void) {
+    zcsr_mix_device_info devs[4];
+    int n = zcsr_mix_list_output_devices(devs, 4);
+    g_outdev_count = n < 0 ? 0 : (n > 4 ? 4 : n);
+    for (int di = 0; di < g_outdev_count; ++di) {
+        strncpy(g_outdev_names[di], devs[di].name, ZCSR_MIX_DEVICE_NAME_CAP - 1);
+        g_outdev_names[di][ZCSR_MIX_DEVICE_NAME_CAP - 1] = '\0';
+        strncpy(g_outdev_ids[di], devs[di].id, ZCSR_MIX_DEVICE_ID_CAP - 1);
+        g_outdev_ids[di][ZCSR_MIX_DEVICE_ID_CAP - 1] = '\0';
+        outdev_opts[di + 1] = g_outdev_names[di];
+    }
     memset(g_video, 0, sizeof(g_video));
     memset(g_graphics, 0, sizeof(g_graphics));
     memset(g_audio, 0, sizeof(g_audio));
@@ -223,7 +239,7 @@ static void init_items(void) {
         .label="--- Devices ---", .type=ZCSR_GAME_SETTINGS_SEPARATOR };
     g_audio[A_OUTPUT] = (zcsr_game_settings_item){
         .label="Output Device", .description="Audio output device.",
-        .type=ZCSR_GAME_SETTINGS_DROPDOWN, .options=outdev_opts, .option_count=3, .value=0 };
+        .type=ZCSR_GAME_SETTINGS_DROPDOWN, .options=outdev_opts, .option_count=g_outdev_count + 1, .value=0 };
     g_audio[A_INPUT] = (zcsr_game_settings_item){
         .label="Input Device", .description="Microphone / audio input device.",
         .type=ZCSR_GAME_SETTINGS_DROPDOWN, .options=indev_opts, .option_count=3, .value=0 };
