@@ -48,3 +48,14 @@ enable_testing()
 add_executable(page_manager_test tests/test_page_manager.c)
 target_link_libraries(page_manager_test PRIVATE zcsr_ui_page_manager)
 add_test(NAME page_manager COMMAND page_manager_test)
+
+# Settings is a page in zcsr_ui_page_manager, not an engine module.
+# Build this test only when the consuming build also provides zcsr_ui.
+if(TARGET zcsr_ui)
+  add_executable(game_settings_overrides_test tests/test_game_settings_overrides.c)
+  target_include_directories(game_settings_overrides_test PRIVATE
+      ${ZCSR_ENGINE_INCLUDE})
+  target_link_libraries(game_settings_overrides_test PRIVATE
+      zcsr_ui_page_manager zcsr_ui zcsr_glrender zcsr_core)
+  add_test(NAME game_settings_overrides COMMAND game_settings_overrides_test)
+endif()
