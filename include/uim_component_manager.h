@@ -89,6 +89,8 @@ uim_Result uim_page_create(UIM_ComponentManager *manager, const char *key, uim_P
 uim_Result uim_page_destroy(UIM_ComponentManager *manager, uim_PageId page_id);
 uim_Result uim_page_find(const UIM_ComponentManager *manager, const char *key, uim_PageId *out_page_id);
 uim_Result uim_page_get_key(const UIM_ComponentManager *manager, uim_PageId page_id, const char **out_key);
+uim_Result uim_page_count(const UIM_ComponentManager *manager, size_t *out_count);
+uim_Result uim_page_get_at(const UIM_ComponentManager *manager, size_t index, uim_PageId *out_page_id);
 uim_Result uim_page_get_node_count(const UIM_ComponentManager *manager, uim_PageId page_id, size_t *out_count);
 uim_Result uim_page_get_node_at(const UIM_ComponentManager *manager, uim_PageId page_id, size_t index, uim_NodeInfo *out_info);
 uim_Result uim_node_find_stable_key(const UIM_ComponentManager *manager, uim_PageId page_id, const char *stable_key, uim_NodeId *out_node_id);
