@@ -26,13 +26,15 @@ static bool uim_utf8_to_wide(const char* utf8, wchar_t* out, size_t cap) {
 static FILE* uim_fopen_utf8(const char* utf8_path, const char* mode) {
     wchar_t wpath[UIM_WPATH_CAP];
     wchar_t wmode[16];
+    FILE* file = NULL;
     size_t i;
     if (!uim_utf8_to_wide(utf8_path, wpath, UIM_WPATH_CAP)) return NULL;
     for (i = 0; i + 1 < sizeof(wmode) / sizeof(wmode[0]) && mode[i]; i++) {
         wmode[i] = (wchar_t)(unsigned char)mode[i];
     }
     wmode[i] = L'\0';
-    return _wfopen(wpath, wmode);
+    if (_wfopen_s(&file, wpath, wmode) != 0) return NULL;
+    return file;
 }
 
 static bool uim_move_utf8(const char* from, const char* to) {
@@ -134,7 +136,7 @@ uim_Result uim_layout_save_file(const UIM_ComponentManager*r,const char*path,uim
 }
 
 uim_Result uim_layout_load_file(UIM_ComponentManager*r,const char*path,uim_PageId page){
-    unsigned char*bytes=NULL;size_t bytes_n=0,i,j,count;Reader rd;char*page_key=NULL;const char*expected=NULL;LayoutRecord*recs=NULL;uim_Result rc;uint32_t n32,z,order;uint8_t vis,en;
+    unsigned char*bytes=NULL;size_t bytes_n=0,i,j,count=0;Reader rd;char*page_key=NULL;const char*expected=NULL;LayoutRecord*recs=NULL;uim_Result rc;uint32_t n32,z,order;uint8_t vis,en;
     if(!r||!path||!page)return uim_ERR_ARGUMENT;
     rc=read_file(path,&bytes,&bytes_n);if(rc!=uim_OK)return rc;rd=(Reader){bytes,bytes_n,0};
     if(!validate_file(&rd,"UIRL")||!get_string(&rd,&page_key)||!get_u32(&rd,&n32)||n32>100000u){rc=uim_ERR_RANGE;goto done;}
@@ -175,6 +177,6 @@ done:
 static bool put_value(Writer*w,uim_Value v){if(!put_u8(w,(uint8_t)v.type))return false;switch(v.type){case uim_VALUE_BOOL:return put_u8(w,v.as.boolean?1:0);case uim_VALUE_INT64:return put_u64(w,(uint64_t)v.as.integer);case uim_VALUE_FLOAT64:return put_f64(w,v.as.real);case uim_VALUE_STRING:return v.as.string.size<=UINT32_MAX&&put_u32(w,(uint32_t)v.as.string.size)&&put_bytes(w,v.as.string.data,v.as.string.size);default:return false;}}
 static bool get_value(Reader*r,uim_Value*out){uint8_t t,b;uint32_t n;uint64_t u;double d;char*s;switch((get_u8(r,&t)?t:255)){case uim_VALUE_BOOL:if(!get_u8(r,&b)||b>1)return false;*out=uim_value_bool(b!=0);return true;case uim_VALUE_INT64:if(!get_u64(r,&u))return false;*out=uim_value_int((int64_t)u);return true;case uim_VALUE_FLOAT64:if(!get_f64(r,&d))return false;*out=uim_value_float(d);return true;case uim_VALUE_STRING:if(!get_u32(r,&n)||n>FILE_LIMIT||n>r->n-r->at)return false;s=(char*)malloc((size_t)n+1);if(!s)return false;if(n)memcpy(s,r->p+r->at,n);s[n]='\0';r->at+=n;out->type=uim_VALUE_STRING;out->as.string.data=s;out->as.string.size=n;return true;default:return false;}}
 uim_Result uim_preset_save_file(const UIM_ComponentManager*r,const char*path){Writer w={0};size_t count=0,i;uim_Result rc;uim_PropertyId id;uim_SettingState st;const char*key;if(!r||!path)return uim_ERR_ARGUMENT;if((rc=uim_setting_count(r,&count))!=uim_OK)return rc;if(count>100000u||count>UINT32_MAX)return uim_ERR_RANGE;if(!put_bytes(&w,"UIRP",4)||!put_u32(&w,FILE_VERSION)||!put_u32(&w,(uint32_t)count)){free(w.p);return uim_ERR_NOMEM;}for(i=0;i<count;i++){if((rc=uim_setting_get_at(r,i,&id,&st))!=uim_OK||(rc=uim_property_get_stable_key(r,id,&key))!=uim_OK){free(w.p);return rc;}if(!put_string(&w,key)||!put_value(&w,st.pending)){free(w.p);return uim_ERR_NOMEM;}}if(!finish_file(&w)){free(w.p);return uim_ERR_NOMEM;}rc=write_file(path,w.p,w.n);free(w.p);return rc;}
-uim_Result uim_preset_load_file(UIM_ComponentManager*r,const char*path){unsigned char*bytes=NULL;size_t n=0,i,j;Reader rd;uint32_t count;PresetRecord*recs=NULL;uim_PropertyId*ids=NULL;uim_Value*values=NULL;uim_Result rc;if(!r||!path)return uim_ERR_ARGUMENT;rc=read_file(path,&bytes,&n);if(rc!=uim_OK)return rc;rd=(Reader){bytes,n,0};if(!validate_file(&rd,"UIRP")||!get_u32(&rd,&count)||count>100000u){rc=uim_ERR_RANGE;goto done;}recs=count?(PresetRecord*)calloc(count,sizeof(*recs)):NULL;ids=count?(uim_PropertyId*)calloc(count,sizeof(*ids)):NULL;values=count?(uim_Value*)calloc(count,sizeof(*values)):NULL;if(count&&(!recs||!ids||!values)){rc=uim_ERR_NOMEM;goto done;}for(i=0;i<count;i++){if(!get_string(&rd,&recs[i].key)||!get_value(&rd,&recs[i].value)){rc=uim_ERR_RANGE;goto done;}rc=uim_property_find_stable_key(r,recs[i].key,&recs[i].id);if(rc!=uim_OK)goto done;for(j=0;j<i;j++)if(recs[j].id==recs[i].id){rc=uim_ERR_EXISTS;goto done;}ids[i]=recs[i].id;values[i]=recs[i].value;}
+uim_Result uim_preset_load_file(UIM_ComponentManager*r,const char*path){unsigned char*bytes=NULL;size_t n=0,i,j;Reader rd;uint32_t count=0;PresetRecord*recs=NULL;uim_PropertyId*ids=NULL;uim_Value*values=NULL;uim_Result rc;if(!r||!path)return uim_ERR_ARGUMENT;rc=read_file(path,&bytes,&n);if(rc!=uim_OK)return rc;rd=(Reader){bytes,n,0};if(!validate_file(&rd,"UIRP")||!get_u32(&rd,&count)||count>100000u){rc=uim_ERR_RANGE;goto done;}recs=count?(PresetRecord*)calloc(count,sizeof(*recs)):NULL;ids=count?(uim_PropertyId*)calloc(count,sizeof(*ids)):NULL;values=count?(uim_Value*)calloc(count,sizeof(*values)):NULL;if(count&&(!recs||!ids||!values)){rc=uim_ERR_NOMEM;goto done;}for(i=0;i<count;i++){if(!get_string(&rd,&recs[i].key)||!get_value(&rd,&recs[i].value)){rc=uim_ERR_RANGE;goto done;}rc=uim_property_find_stable_key(r,recs[i].key,&recs[i].id);if(rc!=uim_OK)goto done;for(j=0;j<i;j++)if(recs[j].id==recs[i].id){rc=uim_ERR_EXISTS;goto done;}ids[i]=recs[i].id;values[i]=recs[i].value;}
 if(rd.at!=rd.n){rc=uim_ERR_RANGE;goto done;}rc=uim_setting_set_pending_batch(r,ids,values,count);
 done:if(recs){for(i=0;i<count;i++){free(recs[i].key);if(recs[i].value.type==uim_VALUE_STRING)free((void*)recs[i].value.as.string.data);}free(recs);}free(ids);free(values);free(bytes);return rc;}

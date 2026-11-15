@@ -14,7 +14,7 @@ endif()
 # For migration, point ZCSR_ENGINE_INCLUDE at the zcsr engine include directory.
 # The engine is not added as a subdirectory here; link/install later.
 
-set(ZCSR_ENGINE_INCLUDE "" CACHE PATH "Path to zero-coupling-signal-router/include")
+set(ZCSR_ENGINE_INCLUDE "C:/Users/chen/Documents/GitHub/_worktrees/zcsr-main/include" CACHE PATH "Path to zero-coupling-signal-router/include")
 
 file(GLOB UIM_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)

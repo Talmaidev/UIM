@@ -111,6 +111,8 @@ uim_Result uim_zcsr_runtime_bridge_apply_property(UIM_ZcsrRuntimeBridge* b, uim_
     ZCSR_NodeId zn = b->uim_to_zcsr[uim_node_id];
     if (zn == ZCSR_NODE_INVALID) return uim_ERR_NOT_FOUND;
 
+    /* 当前按 value 类型映射 setter；prop_id 预留给属性级映射。 */
+    (void)prop_id;
     /* 根据属性类型和组件类型调用对应的 setter */
     /* 现在先做简单的：根据 value type 和 property id 做基础映射 */
     switch (value->type) {
