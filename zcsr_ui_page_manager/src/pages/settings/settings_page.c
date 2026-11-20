@@ -13,6 +13,7 @@
  */
 #include "zcsr_ui_page_manager/ui_game_settings.h"
 #include "zcsr/ui.h"
+#include "zcsr/input.h"
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
@@ -634,18 +635,18 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
     if (s->dropdown_open >= 0) {
         zcsr_game_settings_item* it = &cur_tab(s)->items[s->dropdown_open];
         switch (key) {
-            case 38: case 87: /* Up / W */
+            case ZCSR_KEY_ARROW_UP: case ZCSR_KEY_W: /* Up / W */
                 if (s->dropdown_hover_opt > 0) s->dropdown_hover_opt--;
                 return 0;
-            case 40: case 83: /* Down / S */
+            case ZCSR_KEY_ARROW_DOWN: case ZCSR_KEY_S: /* Down / S */
                 if (s->dropdown_hover_opt < it->option_count - 1) s->dropdown_hover_opt++;
                 return 0;
-            case 13: case 32: /* Enter / Space */
+            case ZCSR_KEY_ENTER: case ZCSR_KEY_SPACE: /* Enter / Space */
                 it->pending_value = s->dropdown_hover_opt;
                 s->dropdown_open = -1;
                 recompute_dirty(s);
                 return 0;
-            case 27: /* ESC */
+            case ZCSR_KEY_ESCAPE: /* ESC */
                 s->dropdown_open = -1;
                 return 0;
         }
@@ -653,8 +654,8 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
     }
 
     /* --- tab switching (Q/E) works in all modes except dropdown open --- */
-    if (key == 81 || key == 69) { /* Q = prev, E = next */
-        int dir = (key == 69) ? 1 : -1;
+    if (key == ZCSR_KEY_Q || key == ZCSR_KEY_E) { /* Q = prev, E = next */
+        int dir = (key == ZCSR_KEY_E) ? 1 : -1;
         s->active_tab = (s->active_tab + dir + s->tab_count) % s->tab_count;
         s->scroll_offset = 0;
         s->selected_item = first_selectable(s);
@@ -667,20 +668,20 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
     /* --- button focus mode --- */
     if (s->focus_area == 1) {
         switch (key) {
-            case 37: case 65: /* Left / A */
+            case ZCSR_KEY_ARROW_LEFT: case ZCSR_KEY_A: /* Left / A */
                 s->selected_button = (s->selected_button + 2) % 3; return 0;
-            case 39: case 68: /* Right / D */
+            case ZCSR_KEY_ARROW_RIGHT: case ZCSR_KEY_D: /* Right / D */
                 s->selected_button = (s->selected_button + 1) % 3; return 0;
-            case 13: case 32: /* Enter / Space — activate button */
+            case ZCSR_KEY_ENTER: case ZCSR_KEY_SPACE: /* Enter / Space — activate button */
                 if (s->selected_button == 0) { return 1; }  /* Apply: caller applies */
                 if (s->selected_button == 1) { return -1; } /* Cancel: caller cancels */
                 if (s->selected_button == 2) { zcsr_game_settings_reset(s); return 0; } /* Reset: internal */
                 return 0;
-            case 38: case 87: /* Up / W -> back to items */
+            case ZCSR_KEY_ARROW_UP: case ZCSR_KEY_W: /* Up / W -> back to items */
                 s->focus_area = 0; return 0;
-            case 9: /* Tab -> back to items */
+            case ZCSR_KEY_TAB: /* Tab -> back to items */
                 s->focus_area = 0; return 0;
-            case 27: /* ESC -> cancel */
+            case ZCSR_KEY_ESCAPE: /* ESC -> cancel */
                 return -1;
         }
         return 0;
@@ -688,17 +689,17 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
 
     /* --- item focus mode --- */
     switch (key) {
-        case 40: case 83: { /* Down / S */
+        case ZCSR_KEY_ARROW_DOWN: case ZCSR_KEY_S: { /* Down / S */
             int next = find_next_item(s, s->selected_item, 1);
             if (next >= 0) { s->selected_item = next; ensure_item_visible(s, next); }
             return 0;
         }
-        case 38: case 87: { /* Up / W */
+        case ZCSR_KEY_ARROW_UP: case ZCSR_KEY_W: { /* Up / W */
             int prev = find_next_item(s, s->selected_item, -1);
             if (prev >= 0) { s->selected_item = prev; ensure_item_visible(s, prev); }
             return 0;
         }
-        case 39: case 68: { /* Right / D — increase */
+        case ZCSR_KEY_ARROW_RIGHT: case ZCSR_KEY_D: { /* Right / D — increase */
             if (s->selected_item < 0) return 0;
             zcsr_game_settings_item* it = &cur_tab(s)->items[s->selected_item];
             if (it->type == ZCSR_GAME_SETTINGS_DROPDOWN) {
@@ -712,7 +713,7 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
             recompute_dirty(s);
             return 0;
         }
-        case 37: case 65: { /* Left / A — decrease */
+        case ZCSR_KEY_ARROW_LEFT: case ZCSR_KEY_A: { /* Left / A — decrease */
             if (s->selected_item < 0) return 0;
             zcsr_game_settings_item* it = &cur_tab(s)->items[s->selected_item];
             if (it->type == ZCSR_GAME_SETTINGS_DROPDOWN) {
@@ -726,7 +727,7 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
             recompute_dirty(s);
             return 0;
         }
-        case 13: case 32: { /* Enter / Space */
+        case ZCSR_KEY_ENTER: case ZCSR_KEY_SPACE: { /* Enter / Space */
             if (s->selected_item < 0) return 0;
             zcsr_game_settings_item* it = &cur_tab(s)->items[s->selected_item];
             if (it->type == ZCSR_GAME_SETTINGS_DROPDOWN) {
@@ -739,11 +740,11 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
             }
             return 0;
         }
-        case 9: /* Tab -> buttons */
+        case ZCSR_KEY_TAB: /* Tab -> buttons */
             s->focus_area = 1;
             s->selected_button = 0;
             return 0;
-        case 27: /* ESC -> cancel */
+        case ZCSR_KEY_ESCAPE: /* ESC -> cancel */
             return -1;
     }
     return 0;
@@ -1257,14 +1258,14 @@ bool zcsr_game_settings_save_overrides(const zcsr_game_settings* s, const char* 
 bool zcsr_game_settings_load_overrides(zcsr_game_settings* s, const char* path)
 {
     FILE* f;
-    char kind[8];
+    char kind[16];
     int a = 0, b = 0, applied = 0;
     zcsr_game_settings_rect r;
 
     if (!s || !path) return false;
     f = fopen(path, "rb");
     if (!f) return false;
-    while (fscanf(f, "%7s", kind) == 1) {
+    while (fscanf(f, "%15s", kind) == 1) {
         if (strcmp(kind, "tab") == 0) {
             if (fscanf(f, "%d %f %f %f %f", &a, &r.x, &r.y, &r.w, &r.h) != 5) break;
             if (zcsr_game_settings_override_tab(s, a, &r)) ++applied;
