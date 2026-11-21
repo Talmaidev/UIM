@@ -1,0 +1,13 @@
+ZCSR UIM change notes
+2026-11-21
+
+history
+- keep one author line
+- keep source, components and technical docs
+- no release tag for now
+
+scope
+- components
+- pages
+- settings
+- tests
