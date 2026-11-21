@@ -10,8 +10,6 @@
 
 #define UIPAGE_RESOURCE_CAP 32u
 #define UIPAGE_ASSET_PATH_CAP 192u
-#define UIPAGE_ENCODED_CAP (8u * 1024u * 1024u)
-#define UIPAGE_ARENA_CAP   (32u * 1024u * 1024u)
 
 typedef struct UIPageResource {
     char path[UIPAGE_ASSET_PATH_CAP];
@@ -34,8 +32,6 @@ struct UIPageView {
     char project_root[512];
     UIPageResource resources[UIPAGE_RESOURCE_CAP];
     size_t resource_count;
-    unsigned char* image_encoded;
-    unsigned char* image_arena;
 };
 
 static uint32_t resource_hash(const char* path) {
@@ -61,19 +57,11 @@ static uint32_t page_resource_resolve(void* user, const char* asset_path) {
         if (strcmp(view->resources[i].path, asset_path) == 0) return view->resources[i].key;
     if (view->resource_count >= UIPAGE_RESOURCE_CAP) return 0u;
     if (view->renderer == NULL) return 0u;
-    if (view->image_encoded == NULL) {
-        view->image_encoded = (unsigned char*)malloc(UIPAGE_ENCODED_CAP);
-        view->image_arena = (unsigned char*)malloc(UIPAGE_ARENA_CAP);
-        if (view->image_encoded == NULL || view->image_arena == NULL) return 0u;
-    }
     (void)zcsr_assets_set_base_dir(view->project_root[0] ? view->project_root : NULL);
     {
         UIPageResource* res = &view->resources[view->resource_count++];
         zcsr_gl_texture texture = 0;
-        (void)zcsr_assets_texture_with_buffers(view->renderer, asset_path,
-                                               view->image_encoded, UIPAGE_ENCODED_CAP,
-                                               view->image_arena, UIPAGE_ARENA_CAP,
-                                               &texture, NULL, NULL);
+        (void)zcsr_assets_texture(view->renderer, asset_path, &texture, NULL, NULL);
         snprintf(res->path, sizeof(res->path), "%s", asset_path);
         res->key = key;
         res->texture = texture; /* 0 = missing, still a stable key */
@@ -162,8 +150,6 @@ void uipage_view_destroy(UIPageView* view) {
             if (view->resources[i].texture)
                 zcsr_gl_texture_destroy(view->renderer, view->resources[i].texture);
     }
-    free(view->image_encoded);
-    free(view->image_arena);
     free(view);
 }
 
