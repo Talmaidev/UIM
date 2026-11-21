@@ -50,6 +50,7 @@ static const Setting *setting_find_c(const UIM_ComponentManager*r,uim_PropertyId
 static Binding *binding_find(UIM_ComponentManager*r,uim_BindingId id){size_t i;for(i=0;i<r->binding_count;i++)if(r->bindings[i].id==id)return &r->bindings[i];return NULL;}
 static void node_info(const Node*n,uim_NodeInfo*out);
 static bool rect_ok(uim_Rect r){return isfinite(r.x)&&isfinite(r.y)&&isfinite(r.width)&&isfinite(r.height)&&r.width>=0&&r.height>=0;}
+static bool transform3_ok(const uim_Transform3*t){size_t i;if(!t)return false;for(i=0;i<3;i++)if(!isfinite(t->position[i])||!isfinite(t->rotation[i])||!isfinite(t->scale[i]))return false;return true;}
 static bool layout_constraints_ok(uim_LayoutConstraints c){return !c.enabled||(isfinite(c.anchor_min_x)&&isfinite(c.anchor_min_y)&&isfinite(c.anchor_max_x)&&isfinite(c.anchor_max_y)&&c.anchor_min_x>=0.0f&&c.anchor_min_x<=1.0f&&c.anchor_min_y>=0.0f&&c.anchor_min_y<=1.0f&&c.anchor_max_x>=0.0f&&c.anchor_max_x<=1.0f&&c.anchor_max_y>=0.0f&&c.anchor_max_y<=1.0f&&c.anchor_min_x<=c.anchor_max_x&&c.anchor_min_y<=c.anchor_max_y&&isfinite(c.offset_left)&&isfinite(c.offset_top)&&isfinite(c.offset_right)&&isfinite(c.offset_bottom));}
 static void remove_binding_for_node(UIM_ComponentManager*r,Node*n){size_t i;if(!n->binding)return;for(i=0;i<r->binding_count;i++)if(r->bindings[i].id==n->binding){memmove(&r->bindings[i],&r->bindings[i+1],(r->binding_count-i-1)*sizeof(Binding));r->binding_count--;break;}n->binding=0;}
 static void component_instance_remove_at(UIM_ComponentManager*r,size_t i){ComponentInstance*c=&r->component_instances[i];size_t j;for(j=0;j<c->property_count;j++)value_free(&c->properties[j].value);free(c->properties);memmove(c,c+1,(r->component_instance_count-i-1)*sizeof(*c));r->component_instance_count--;}
@@ -70,13 +71,17 @@ uim_Result uim_page_get_node_count(const UIM_ComponentManager*r,uim_PageId page,
 uim_Result uim_page_get_node_at(const UIM_ComponentManager*r,uim_PageId page,size_t index,uim_NodeInfo*out){size_t i,n=0;if(!r||!page||!out)return uim_ERR_ARGUMENT;if(!page_find((UIM_ComponentManager*)r,page))return uim_ERR_NOT_FOUND;for(i=0;i<r->node_count;i++)if(r->nodes[i].d.page_id==page){if(n++==index){node_info(&r->nodes[i],out);return uim_OK;}}return uim_ERR_NOT_FOUND;}
 uim_Result uim_node_find_stable_key(const UIM_ComponentManager*r,uim_PageId page,const char*key,uim_NodeId*out){size_t i;if(!r||!page||!key||!key[0]||!out)return uim_ERR_ARGUMENT;for(i=0;i<r->node_count;i++)if(r->nodes[i].d.page_id==page&&r->nodes[i].stable_key&&strcmp(r->nodes[i].stable_key,key)==0){*out=r->nodes[i].id;return uim_OK;}return uim_ERR_NOT_FOUND;}
 uim_Result uim_page_destroy(UIM_ComponentManager*r,uim_PageId id){size_t i;if(!r||!id)return uim_ERR_ARGUMENT;if(!page_find(r,id))return uim_ERR_NOT_FOUND;i=0;while(i<r->node_count){if(r->nodes[i].d.page_id==id){node_destroy_recursive(r,r->nodes[i].id);i=0;}else i++;}for(i=0;i<r->page_count;i++)if(r->pages[i].id==id){free(r->pages[i].key);memmove(&r->pages[i],&r->pages[i+1],(r->page_count-i-1)*sizeof(Page));r->page_count--;return uim_OK;}return uim_ERR_NOT_FOUND;}
-uim_Result uim_node_create(UIM_ComponentManager*r,const uim_NodeDesc*d,uim_NodeId*out){Node*n;void*cfg=NULL;char*key=NULL;size_t i;if(!r||!d||!out||!page_find(r,d->page_id)||!rect_ok(d->local_rect)||!layout_constraints_ok(d->layout)||(!d->component_config&&d->component_config_size))return uim_ERR_ARGUMENT;if(r->next_node==0||r->next_node==UINT64_MAX)return uim_ERR_RANGE;if(d->stable_key&&d->stable_key[0]){for(i=0;i<r->node_count;i++)if(r->nodes[i].d.page_id==d->page_id&&r->nodes[i].stable_key&&strcmp(r->nodes[i].stable_key,d->stable_key)==0)return uim_ERR_EXISTS;key=dup_n(d->stable_key,strlen(d->stable_key));if(!key)return uim_ERR_NOMEM;}if(d->parent_id){Node*p=node_find(r,d->parent_id);if(!p||p->d.page_id!=d->page_id){free(key);return uim_ERR_NOT_FOUND;}}if(d->component_config_size){cfg=malloc(d->component_config_size);if(!cfg){free(key);return uim_ERR_NOMEM;}memcpy(cfg,d->component_config,d->component_config_size);}if(!grow((void**)&r->nodes,&r->node_cap,r->node_count+1,sizeof(Node))){free(cfg);free(key);return uim_ERR_NOMEM;}n=&r->nodes[r->node_count++];memset(n,0,sizeof(*n));n->id=r->next_node++;n->d=*d;n->d.stable_key=NULL;n->d.component_config=NULL;n->stable_key=key;n->config=cfg;*out=n->id;return uim_OK;}
+uim_Result uim_node_create(UIM_ComponentManager*r,const uim_NodeDesc*d,uim_NodeId*out){Node*n;void*cfg=NULL;char*key=NULL;size_t i;if(!r||!d||!out||!page_find(r,d->page_id)||(d->space!=uim_SPACE_2D&&d->space!=uim_SPACE_3D)||(d->space==uim_SPACE_3D&&!transform3_ok(&d->transform))||!rect_ok(d->local_rect)||!layout_constraints_ok(d->layout)||(!d->component_config&&d->component_config_size))return uim_ERR_ARGUMENT;if(r->next_node==0||r->next_node==UINT64_MAX)return uim_ERR_RANGE;if(d->stable_key&&d->stable_key[0]){for(i=0;i<r->node_count;i++)if(r->nodes[i].d.page_id==d->page_id&&r->nodes[i].stable_key&&strcmp(r->nodes[i].stable_key,d->stable_key)==0)return uim_ERR_EXISTS;key=dup_n(d->stable_key,strlen(d->stable_key));if(!key)return uim_ERR_NOMEM;}if(d->parent_id){Node*p=node_find(r,d->parent_id);if(!p||p->d.page_id!=d->page_id){free(key);return uim_ERR_NOT_FOUND;}}if(d->component_config_size){cfg=malloc(d->component_config_size);if(!cfg){free(key);return uim_ERR_NOMEM;}memcpy(cfg,d->component_config,d->component_config_size);}if(!grow((void**)&r->nodes,&r->node_cap,r->node_count+1,sizeof(Node))){free(cfg);free(key);return uim_ERR_NOMEM;}n=&r->nodes[r->node_count++];memset(n,0,sizeof(*n));n->id=r->next_node++;n->d=*d;n->d.stable_key=NULL;n->d.component_config=NULL;n->stable_key=key;n->config=cfg;*out=n->id;return uim_OK;}
+uim_Result uim_node_set_stable_key(UIM_ComponentManager*r,uim_NodeId id,const char*key){Node*n;char*copy;size_t i;if(!r||!id||!key||!key[0])return uim_ERR_ARGUMENT;n=node_find(r,id);if(!n)return uim_ERR_NOT_FOUND;for(i=0;i<r->node_count;i++)if(i!=(size_t)(n-r->nodes)&&r->nodes[i].d.page_id==n->d.page_id&&r->nodes[i].stable_key&&strcmp(r->nodes[i].stable_key,key)==0)return uim_ERR_EXISTS;if(n->stable_key&&strcmp(n->stable_key,key)==0)return uim_OK;copy=dup_n(key,strlen(key));if(!copy)return uim_ERR_NOMEM;free(n->stable_key);n->stable_key=copy;return uim_OK;}
 uim_Result uim_node_destroy(UIM_ComponentManager*r,uim_NodeId id){if(!r||!id)return uim_ERR_ARGUMENT;if(!node_find(r,id))return uim_ERR_NOT_FOUND;node_destroy_recursive(r,id);return uim_OK;}
-static void node_info(const Node*n,uim_NodeInfo*out){out->stable_key=n->stable_key;out->id=n->id;out->page_id=n->d.page_id;out->component_id=n->d.component_id;out->parent_id=n->d.parent_id;out->local_rect=n->d.local_rect;out->layout=n->d.layout;out->visible=n->d.visible;out->enabled=n->d.enabled;out->z_order=n->d.z_order;out->action_id=n->d.action_id;out->child_order=n->d.child_order;out->binding_id=n->binding;out->component_config=n->config;out->component_config_size=n->d.component_config_size;}
+static void node_info(const Node*n,uim_NodeInfo*out){out->stable_key=n->stable_key;out->id=n->id;out->page_id=n->d.page_id;out->component_id=n->d.component_id;out->parent_id=n->d.parent_id;out->local_rect=n->d.local_rect;out->layout=n->d.layout;out->visible=n->d.visible;out->enabled=n->d.enabled;out->z_order=n->d.z_order;out->action_id=n->d.action_id;out->child_order=n->d.child_order;out->binding_id=n->binding;out->component_config=n->config;out->component_config_size=n->d.component_config_size;out->space=n->d.space;out->transform=n->d.transform;}
 uim_Result uim_node_get(const UIM_ComponentManager*r,uim_NodeId id,uim_NodeInfo*out){const Node*n;if(!r||!id||!out)return uim_ERR_ARGUMENT;n=node_find_c(r,id);if(!n)return uim_ERR_NOT_FOUND;node_info(n,out);return uim_OK;}
 uim_Result uim_node_get_child(const UIM_ComponentManager*r,uim_NodeId parent,size_t index,uim_NodeInfo*out){size_t i,j,rank,best=SIZE_MAX;if(!r||!parent||!out)return uim_ERR_ARGUMENT;if(!node_find_c(r,parent))return uim_ERR_NOT_FOUND;for(i=0;i<r->node_count;i++){if(r->nodes[i].d.parent_id!=parent)continue;rank=0;for(j=0;j<r->node_count;j++)if(r->nodes[j].d.parent_id==parent&&(r->nodes[j].d.child_order<r->nodes[i].d.child_order||(r->nodes[j].d.child_order==r->nodes[i].d.child_order&&r->nodes[j].id<r->nodes[i].id)))rank++;if(rank==index){best=i;break;}}if(best==SIZE_MAX)return uim_ERR_NOT_FOUND;node_info(&r->nodes[best],out);return uim_OK;}
 uim_Result uim_node_set_parent(UIM_ComponentManager*r,uim_NodeId id,uim_NodeId parent){Node*n,*p;uim_NodeId cur;if(!r||!id)return uim_ERR_ARGUMENT;n=node_find(r,id);if(!n)return uim_ERR_NOT_FOUND;if(parent){p=node_find(r,parent);if(!p||p->d.page_id!=n->d.page_id)return uim_ERR_NOT_FOUND;cur=parent;while(cur){if(cur==id)return uim_ERR_STATE;p=node_find(r,cur);cur=p?p->d.parent_id:0;}}n->d.parent_id=parent;return uim_OK;}
-uim_Result uim_node_set_rect(UIM_ComponentManager*r,uim_NodeId id,uim_Rect v){Node*n;if(!r||!id||!rect_ok(v))return uim_ERR_ARGUMENT;n=node_find(r,id);if(!n)return uim_ERR_NOT_FOUND;n->d.local_rect=v;return uim_OK;}
+uim_Result uim_node_set_rect(UIM_ComponentManager*r,uim_NodeId id,uim_Rect v){Node*n;if(!r||!id||!rect_ok(v))return uim_ERR_ARGUMENT;n=node_find(r,id);if(!n)return uim_ERR_NOT_FOUND;if(n->d.space!=uim_SPACE_2D)return uim_ERR_TYPE;n->d.local_rect=v;return uim_OK;}
+uim_Result uim_node_set_space(UIM_ComponentManager*r,uim_NodeId id,uim_Space space){Node*n;if(!r||!id||(space!=uim_SPACE_2D&&space!=uim_SPACE_3D))return uim_ERR_ARGUMENT;n=node_find(r,id);if(!n)return uim_ERR_NOT_FOUND;n->d.space=space;return uim_OK;}
+uim_Result uim_node_set_transform3(UIM_ComponentManager*r,uim_NodeId id,const uim_Transform3*t){Node*n;if(!r||!id||!transform3_ok(t))return uim_ERR_ARGUMENT;n=node_find(r,id);if(!n)return uim_ERR_NOT_FOUND;if(n->d.space!=uim_SPACE_3D)return uim_ERR_TYPE;n->d.transform=*t;return uim_OK;}
+uim_Result uim_node_get_transform3(const UIM_ComponentManager*r,uim_NodeId id,uim_Transform3*out){const Node*n;if(!r||!id||!out)return uim_ERR_ARGUMENT;n=node_find_c(r,id);if(!n)return uim_ERR_NOT_FOUND;if(n->d.space!=uim_SPACE_3D)return uim_ERR_TYPE;*out=n->d.transform;return uim_OK;}
 uim_Result uim_node_set_layout_constraints(UIM_ComponentManager*r,uim_NodeId id,uim_LayoutConstraints v){Node*n;if(!r||!id||!layout_constraints_ok(v))return uim_ERR_ARGUMENT;n=node_find(r,id);if(!n)return uim_ERR_NOT_FOUND;n->d.layout=v;return uim_OK;}
 uim_Result uim_node_get_layout_constraints(const UIM_ComponentManager*r,uim_NodeId id,uim_LayoutConstraints*out){const Node*n;if(!r||!id||!out)return uim_ERR_ARGUMENT;n=node_find_c(r,id);if(!n)return uim_ERR_NOT_FOUND;*out=n->d.layout;return uim_OK;}
 uim_Result uim_page_resolve_layout(UIM_ComponentManager*r,uim_PageId page,float vw,float vh){
@@ -104,7 +109,7 @@ uim_Result uim_page_resolve_layout(UIM_ComponentManager*r,uim_PageId page,float 
          items[i].resolved=(uim_Rect){left,top,right-left,bottom-top};}
     }
     /* All target rectangles are valid before the first mutation. */
-    for(i=0;i<count;i++){rc=uim_node_set_rect(r,items[i].info.id,items[i].resolved);if(rc!=uim_OK){for(j=0;j<i;j++)(void)uim_node_set_rect(r,items[j].info.id,items[j].info.local_rect);goto done;}}
+    for(i=0;i<count;i++){if(items[i].info.space==uim_SPACE_3D)continue;rc=uim_node_set_rect(r,items[i].info.id,items[i].resolved);if(rc!=uim_OK){for(j=0;j<i;j++)if(items[j].info.space==uim_SPACE_2D)(void)uim_node_set_rect(r,items[j].info.id,items[j].info.local_rect);goto done;}}
     rc=uim_OK;
 done:free(items);return rc;
 }
@@ -409,6 +414,40 @@ uim_Result uim_component_instance_get_property(const UIM_ComponentManager *manag
             }
         }
         return uim_ERR_NOT_FOUND;
+    }
+    return uim_ERR_NOT_FOUND;
+}
+
+uim_Result uim_component_instance_property_count(const UIM_ComponentManager *manager,
+                                                 uim_ComponentInstanceId instance_id,
+                                                 size_t *out_count)
+{
+    size_t i;
+    if (!manager || !instance_id || !out_count) return uim_ERR_ARGUMENT;
+    for (i = 0; i < manager->component_instance_count; ++i) {
+        if (manager->component_instances[i].info.instance_id == instance_id) {
+            *out_count = manager->component_instances[i].property_count;
+            return uim_OK;
+        }
+    }
+    return uim_ERR_NOT_FOUND;
+}
+
+uim_Result uim_component_instance_property_get_at(const UIM_ComponentManager *manager,
+                                                  uim_ComponentInstanceId instance_id,
+                                                  size_t index,
+                                                  uim_PropertyId *out_property_id,
+                                                  uim_Value *out_value)
+{
+    size_t i;
+    if (!manager || !instance_id || !out_property_id || !out_value) return uim_ERR_ARGUMENT;
+    for (i = 0; i < manager->component_instance_count; ++i) {
+        const ComponentInstance *entry = &manager->component_instances[i];
+        if (entry->info.instance_id != instance_id) continue;
+        if (index >= entry->property_count) return uim_ERR_NOT_FOUND;
+        *out_property_id = entry->properties[index].property_id;
+        *out_value = entry->properties[index].value;
+        return uim_OK;
     }
     return uim_ERR_NOT_FOUND;
 }

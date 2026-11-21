@@ -16,8 +16,17 @@ endif()
 
 set(ZCSR_ENGINE_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../zero-coupling-signal-router/include" CACHE PATH "Path to zero-coupling-signal-router/include")
 
-file(GLOB UIM_SOURCES CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c)
+# Explicit source list: zcsr_uim is the core UI instance model only.
+# Project document and asset registry belong to zcsr_uim_project. Never glob
+# src/*.c here, or consumers linking zcsr_uim alone would also get project/asset
+# symbols and the target boundary would collapse.
+set(UIM_SOURCES
+    src/uim_component_manager.c
+    src/uim_component_manager_lifecycle.c
+    src/uim_component_manager_persist.c
+    src/uim_component_manager_presets.c
+    src/uim_component_registry.c
+    src/uim_component_runtime.c)
 add_library(zcsr_uim STATIC ${UIM_SOURCES})
 target_include_directories(zcsr_uim PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include)

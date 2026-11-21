@@ -43,6 +43,15 @@ bool uim_value_equal(uim_Value a, uim_Value b);
  * the event and must be released with uim_event_dispose(). */
 
 typedef struct uim_Rect { float x,y,width,height; } uim_Rect;
+/* Node transform space. The editor is not 2D-only: a node can carry a 3D
+ * transform without forking the document model. Existing 2D callers leave
+ * space zero and keep using local_rect exactly as before. */
+typedef enum uim_Space { uim_SPACE_2D = 0, uim_SPACE_3D = 1 } uim_Space;
+typedef struct uim_Transform3 {
+    float position[3];
+    float rotation[3]; /* Euler degrees; quaternion can be added without changing 2D */
+    float scale[3];
+} uim_Transform3;
 /* Optional responsive anchors. Offsets are measured inward from each anchor:
  * left=x(parent)*anchor_min_x+offset_left; right=x(parent)*anchor_max_x-offset_right,
  * with the equivalent top/bottom equations. Root nodes anchor to the page viewport. */
@@ -67,12 +76,18 @@ typedef struct uim_NodeDesc {
     uim_Rect local_rect; uim_LayoutConstraints layout; bool visible; bool enabled; int32_t z_order;
     uim_ActionId action_id; /* 0 means this node has no semantic action */
     uint32_t child_order; const void *component_config; size_t component_config_size;
+    /* 2D layout stays in local_rect/layout; 3D nodes use space+transform.
+     * The fields are appended so existing zero-initialized 2D callers are unchanged. */
+    uim_Space space;
+    uim_Transform3 transform;
 } uim_NodeDesc;
 typedef struct uim_NodeInfo {
     const char *stable_key; /* borrowed until node mutation/destruction */
     uim_NodeId id; uim_PageId page_id; uim_ComponentId component_id; uim_NodeId parent_id;
     uim_Rect local_rect; uim_LayoutConstraints layout; bool visible; bool enabled; int32_t z_order; uim_ActionId action_id; uint32_t child_order;
     uim_BindingId binding_id; const void *component_config; size_t component_config_size;
+    uim_Space space;
+    uim_Transform3 transform;
 } uim_NodeInfo;
 typedef struct uim_SettingState { uim_Value initial, committed, pending; bool dirty; uint64_t revision; } uim_SettingState;
 typedef enum uim_EventType { uim_EVENT_NONE=0, uim_EVENT_USER_VALUE_CHANGED, uim_EVENT_ACTION } uim_EventType;
@@ -95,11 +110,21 @@ uim_Result uim_page_get_node_count(const UIM_ComponentManager *manager, uim_Page
 uim_Result uim_page_get_node_at(const UIM_ComponentManager *manager, uim_PageId page_id, size_t index, uim_NodeInfo *out_info);
 uim_Result uim_node_find_stable_key(const UIM_ComponentManager *manager, uim_PageId page_id, const char *stable_key, uim_NodeId *out_node_id);
 uim_Result uim_node_create(UIM_ComponentManager *manager, const uim_NodeDesc *desc, uim_NodeId *out_node_id);
+/* Rename a node's persistent identity. The key must be unique within its page. */
+uim_Result uim_node_set_stable_key(UIM_ComponentManager *manager, uim_NodeId node_id, const char *stable_key);
 uim_Result uim_node_destroy(UIM_ComponentManager *manager, uim_NodeId node_id);
 uim_Result uim_node_get(const UIM_ComponentManager *manager, uim_NodeId node_id, uim_NodeInfo *out_info);
 uim_Result uim_node_get_child(const UIM_ComponentManager *manager, uim_NodeId parent_id, size_t index, uim_NodeInfo *out_info);
 uim_Result uim_node_set_parent(UIM_ComponentManager *manager, uim_NodeId node_id, uim_NodeId parent_id);
 uim_Result uim_node_set_rect(UIM_ComponentManager *manager, uim_NodeId node_id, uim_Rect rect);
+/* Space is a document property, not an editor toggle. Switching does not
+ * silently reinterpret rect <-> transform; the caller must issue an explicit
+ * conversion command so undo/diff stay predictable. */
+uim_Result uim_node_set_space(UIM_ComponentManager *manager, uim_NodeId node_id, uim_Space space);
+uim_Result uim_node_set_transform3(UIM_ComponentManager *manager, uim_NodeId node_id,
+                                   const uim_Transform3 *transform);
+uim_Result uim_node_get_transform3(const UIM_ComponentManager *manager, uim_NodeId node_id,
+                                   uim_Transform3 *out_transform);
 uim_Result uim_node_set_layout_constraints(UIM_ComponentManager *manager, uim_NodeId node_id, uim_LayoutConstraints constraints);
 uim_Result uim_node_get_layout_constraints(const UIM_ComponentManager *manager, uim_NodeId node_id, uim_LayoutConstraints *out_constraints);
 /* Recalculate anchored nodes for a viewport size. Changes are prevalidated and applied atomically. */
@@ -187,6 +212,16 @@ uim_Result uim_component_instance_get_property(const UIM_ComponentManager *manag
                                                uim_ComponentInstanceId instance_id,
                                                uim_PropertyId property_id,
                                                uim_Value *out_value);
+/* Property enumeration for serialization and diagnostics. Values are borrowed
+ * until the same instance is mutated or the receiver is destroyed. */
+uim_Result uim_component_instance_property_count(const UIM_ComponentManager *manager,
+                                                 uim_ComponentInstanceId instance_id,
+                                                 size_t *out_count);
+uim_Result uim_component_instance_property_get_at(const UIM_ComponentManager *manager,
+                                                  uim_ComponentInstanceId instance_id,
+                                                  size_t index,
+                                                  uim_PropertyId *out_property_id,
+                                                  uim_Value *out_value);
 
 #ifdef __cplusplus
 }
