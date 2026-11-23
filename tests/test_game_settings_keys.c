@@ -39,6 +39,11 @@ static zcsr_game_settings* make_panel(zcsr_game_settings_item* items,
     items[3].label = "separator";
     items[3].type = ZCSR_GAME_SETTINGS_SEPARATOR;
 
+    /* Audio tab fixture: item 4 was left zero-initialized, which is enum value
+     * DROPDOWN with no options. That is an invalid item, not a valid empty tab. */
+    items[4].label = "Audio";
+    items[4].type = ZCSR_GAME_SETTINGS_SEPARATOR;
+
     memset(tabs, 0, sizeof(*tabs) * 2);
     tabs[0].name = "Video";
     tabs[0].items = items;

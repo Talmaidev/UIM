@@ -1553,6 +1553,41 @@ uim_Result uir_project_deserialize(const unsigned char *bytes,
                                    uim_PageId *out_page,
                                    uim_NodeId *out_root,
                                    char *out_name, size_t name_cap) {
+    /* Single-file container: project + opaque scene section. UIM only needs
+     * the project prefix; the runtime may separately decode the scene. */
+    if (bytes && size >= 11u && memcmp(bytes, "ZCSRPROJ 1\n", 11u) == 0) {
+        const unsigned char *p = bytes + 11u;
+        const unsigned char *end = bytes + size;
+        const unsigned char *line_end;
+        char line[128];
+        size_t project_size = 0u;
+        size_t n;
+
+        line_end = (const unsigned char *)memchr(p, '\n', (size_t)(end - p));
+        if (!line_end) return uim_ERR_RANGE;
+        n = (size_t)(line_end - p);
+        if (n >= sizeof(line)) return uim_ERR_RANGE;
+        memcpy(line, p, n);
+        line[n] = '\0';
+        if (sscanf(line, "project %zu", &project_size) != 1 || project_size == 0u)
+            return uim_ERR_RANGE;
+        p = line_end + 1;
+        line_end = (const unsigned char *)memchr(p, '\n', (size_t)(end - p));
+        if (!line_end) return uim_ERR_RANGE;
+        n = (size_t)(line_end - p);
+        if (n >= sizeof(line)) return uim_ERR_RANGE;
+        memcpy(line, p, n);
+        line[n] = '\0';
+        {
+            size_t scene_size = 0u;
+            if (sscanf(line, "scene %zu", &scene_size) != 1) return uim_ERR_RANGE;
+            (void)scene_size;
+        }
+        p = line_end + 1;
+        if (project_size > (size_t)(end - p)) return uim_ERR_RANGE;
+        return uir_project_deserialize(p, project_size, out_manager, out_page,
+                                       out_root, out_name, name_cap);
+    }
     if (bytes && size >= 5u && memcmp(bytes, "UIRJ ", 5u) == 0) {
         return text_project_load(bytes, size, out_manager, out_page, out_root,
                                  out_name, name_cap);
@@ -1865,6 +1900,68 @@ uim_Result uir_project_load(const char *path,
     if (result != uim_OK) return result;
     if (!out_name[0]) project_name_from_path(path, out_name, name_cap);
     path_dirname(path, out_root_path, root_cap);
+    return uim_OK;
+}
+
+uim_Result uir_project_read_scene_bytes(const char *path,
+                                        unsigned char **out_data,
+                                        size_t *out_size) {
+    unsigned char *bytes = NULL;
+    size_t size = 0u;
+    const unsigned char *p;
+    const unsigned char *end;
+    const unsigned char *line_end;
+    char line[128];
+    size_t n;
+    size_t project_size = 0u;
+    size_t scene_size = 0u;
+    unsigned char *scene = NULL;
+
+    if (!path || !path[0] || !out_data || !out_size) return uim_ERR_ARGUMENT;
+    *out_data = NULL;
+    *out_size = 0u;
+    if (!read_whole_file(path, &bytes, &size)) return uim_ERR_NOT_FOUND;
+    if (size < 11u || memcmp(bytes, "ZCSRPROJ 1\n", 11u) != 0) {
+        free(bytes);
+        return uim_ERR_NOT_FOUND;
+    }
+    p = bytes + 11u;
+    end = bytes + size;
+    line_end = (const unsigned char *)memchr(p, '\n', (size_t)(end - p));
+    if (!line_end) { free(bytes); return uim_ERR_RANGE; }
+    n = (size_t)(line_end - p);
+    if (n >= sizeof(line)) { free(bytes); return uim_ERR_RANGE; }
+    memcpy(line, p, n);
+    line[n] = '\0';
+    if (sscanf(line, "project %zu", &project_size) != 1 || project_size == 0u) {
+        free(bytes);
+        return uim_ERR_RANGE;
+    }
+    p = line_end + 1;
+    line_end = (const unsigned char *)memchr(p, '\n', (size_t)(end - p));
+    if (!line_end) { free(bytes); return uim_ERR_RANGE; }
+    n = (size_t)(line_end - p);
+    if (n >= sizeof(line)) { free(bytes); return uim_ERR_RANGE; }
+    memcpy(line, p, n);
+    line[n] = '\0';
+    if (sscanf(line, "scene %zu", &scene_size) != 1) {
+        free(bytes);
+        return uim_ERR_RANGE;
+    }
+    p = line_end + 1;
+    if (project_size > (size_t)(end - p) ||
+        scene_size > (size_t)(end - p) - project_size) {
+        free(bytes);
+        return uim_ERR_RANGE;
+    }
+    if (scene_size) {
+        scene = (unsigned char *)malloc(scene_size);
+        if (!scene) { free(bytes); return uim_ERR_NOMEM; }
+        memcpy(scene, p + project_size, scene_size);
+    }
+    free(bytes);
+    *out_data = scene;
+    *out_size = scene_size;
     return uim_OK;
 }
 

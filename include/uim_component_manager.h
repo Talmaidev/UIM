@@ -1,8 +1,19 @@
 #ifndef UIM_COMPONENT_MANAGER_H
 #define UIM_COMPONENT_MANAGER_H
-/* UIM Component Manager: business-neutral page/node/property/layout/apply model.
- * Manages editor-side instance data (Page/Node/Component Instance/Property/Binding).
- * Does not include or implement ZCSR Primitive runtime or any graphics API. */
+/* UIM Component Manager.
+ *
+ * Canonical UIM contract: this module owns the smallest UI component registry,
+ * component instances and property values. It does not own the OS window, the
+ * renderer, the scene, the setting page, or the editor workspace.
+ *
+ * Migration status: Page/Node document and layout APIs still live in this
+ * header for source compatibility, but their symbols are compiled only into
+ * the zcsr_uim_document target. zcsr_uim is a compatibility facade that links
+ * both zcsr_uim_component and zcsr_uim_document. Do not add new page/node
+ * document APIs here; extend the document target instead.
+ *
+ * This module does not include or implement ZCSR Primitive runtime or any
+ * graphics API. */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -43,9 +54,10 @@ bool uim_value_equal(uim_Value a, uim_Value b);
  * the event and must be released with uim_event_dispose(). */
 
 typedef struct uim_Rect { float x,y,width,height; } uim_Rect;
-/* Node transform space. The editor is not 2D-only: a node can carry a 3D
- * transform without forking the document model. Existing 2D callers leave
- * space zero and keep using local_rect exactly as before. */
+/* Legacy document placement space. A node may carry a projected placement
+ * transform for editing a 2.5D document; this is not a 3D scene model and it
+ * must not be used to create a 3D renderer. Existing 2D callers leave space
+ * zero and keep using local_rect exactly as before. */
 typedef enum uim_Space { uim_SPACE_2D = 0, uim_SPACE_3D = 1 } uim_Space;
 typedef struct uim_Transform3 {
     float position[3];

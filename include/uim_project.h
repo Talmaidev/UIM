@@ -1,7 +1,7 @@
 #ifndef UIM_PROJECT_H
 #define UIM_PROJECT_H
 
-/* Editor project (.uirproj) serialization and package build.
+/* Editor project (.uireproj) serialization and package build.
  *
  * The file is a complete document snapshot: every page, every node, node
  * layout/geometry/flags/action, component config bytes, and attached
@@ -56,7 +56,7 @@ uim_Result uir_project_save(const UIM_ComponentManager *manager,
                             size_t page_count,
                             const char *path);
 
-/* Load a .uirproj into a newly created manager. On success the caller owns
+/* Load a .uireproj into a newly created manager. On success the caller owns
  * *out_manager and must destroy it. *out_page and *out_root address the entry
  * page and its first root node. out_root_path receives the project directory. */
 uim_Result uir_project_load(const char *path,
@@ -65,6 +65,14 @@ uim_Result uir_project_load(const char *path,
                             uim_NodeId *out_root,
                             char *out_root_path, size_t root_cap,
                             char *out_name, size_t name_cap);
+
+/* Read the opaque scene section from a single-file `.uiproj` container.
+ * UIM does not parse or reinterpret scene bytes; the runtime hands them to
+ * zcsr_scene_io. Returns uim_ERR_NOT_FOUND for a legacy project file and
+ * uim_ERR_RANGE for a malformed container. */
+uim_Result uir_project_read_scene_bytes(const char *path,
+                                        unsigned char **out_data,
+                                        size_t *out_size);
 
 /* Build dist/<project>/ with:
  *   player.exe

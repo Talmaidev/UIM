@@ -61,7 +61,37 @@ static uint32_t page_resource_resolve(void* user, const char* asset_path) {
     {
         UIPageResource* res = &view->resources[view->resource_count++];
         zcsr_gl_texture texture = 0;
-        (void)zcsr_assets_texture(view->renderer, asset_path, &texture, NULL, NULL);
+        char resolved[ZCSR_ASSET_PATH_CAP];
+        FILE* file = NULL;
+        long file_size = 0;
+        unsigned char* encoded = NULL;
+        void* arena = NULL;
+        size_t encoded_cap = 0;
+        size_t arena_cap = 0;
+
+        /* The engine exposes only the caller-buffer decoder. Load the encoded
+         * bytes once, size a decode arena from the file size with headroom,
+         * upload, then release both scratch buffers. This is load-time work,
+         * not a frame-path allocation. */
+        if (zcsr_assets_resolve(asset_path, resolved, (int)sizeof(resolved)) &&
+            (file = fopen(resolved, "rb")) != NULL) {
+            if (fseek(file, 0, SEEK_END) == 0) file_size = ftell(file);
+            if (file_size > 0) {
+                encoded_cap = (size_t)file_size;
+                arena_cap = encoded_cap * 16u + (4u * 1024u * 1024u);
+                encoded = (unsigned char*)malloc(encoded_cap);
+                arena = malloc(arena_cap);
+                if (encoded && arena) {
+                    (void)zcsr_assets_texture_with_buffers(view->renderer, asset_path,
+                                                           encoded, encoded_cap,
+                                                           arena, arena_cap,
+                                                           &texture, NULL, NULL);
+                }
+            }
+            fclose(file);
+        }
+        free(encoded);
+        free(arena);
         snprintf(res->path, sizeof(res->path), "%s", asset_path);
         res->key = key;
         res->texture = texture; /* 0 = missing, still a stable key */
