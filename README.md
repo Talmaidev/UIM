@@ -1,5 +1,7 @@
 # UIM
 
+Version: 1.0.0. The `main` branch is the canonical history.
+
 UIM is the smallest UI component manager used by ZCSR runtime and editor. It
 does not own an OS window, renderer, product loop, page document, page tree, or
 page navigation. The runtime host owns the window and loop; the editor project
