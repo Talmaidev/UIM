@@ -5,3 +5,6 @@ out/
 *.lib
 *.pdb
 *.ilk
+
+# generic build output directories (covers build_main, build_asan, build_audit_uim, ...)
+build*/

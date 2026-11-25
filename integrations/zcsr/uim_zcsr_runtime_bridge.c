@@ -116,6 +116,7 @@ static ZCSR_Result map_component_type(uint32_t uim_type, ZCSR_ComponentId* out) 
     case 3: *out = ZCSR_COMPONENT_SLIDER; return ZCSR_OK;
     case 4: *out = ZCSR_COMPONENT_LABEL; return ZCSR_OK;
     case 5: *out = ZCSR_COMPONENT_PANEL; return ZCSR_OK;
+    case 9: *out = ZCSR_COMPONENT_TEXT_INPUT; return ZCSR_OK;
     default: return ZCSR_ERR_UNSUPPORTED;
     }
 }
@@ -509,6 +510,16 @@ void uim_zcsr_runtime_bridge_forward_zcsr_events(UIM_ZcsrRuntimeBridge* b) {
             float sval = 0.0f;
             zcsr_slider_get_value(b->zcsr, ev.source_node, &sval);
             v = uim_value_float((double)sval);
+            break;
+        }
+        case ZCSR_EVENT_TEXT_CHANGED:
+        case ZCSR_EVENT_TEXT_SUBMITTED: {
+            char text[512];
+            uint32_t bytes = 0;
+            text[0] = '\0';
+            (void)zcsr_text_input_get_text(b->zcsr, ev.source_node, text,
+                                           (uint32_t)sizeof text, &bytes);
+            v = uim_value_string(text, (size_t)bytes);
             break;
         }
         case ZCSR_EVENT_BUTTON_CLICKED:

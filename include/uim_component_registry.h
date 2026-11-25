@@ -28,7 +28,8 @@ enum {
     uim_COMPONENT_SCROLL_VIEW = 0x0001000Au,
     uim_COMPONENT_MOTION      = 0x0001000Bu,
     uim_COMPONENT_HEALTH      = 0x0001000Cu,
-    uim_COMPONENT_RULE        = 0x0001000Du
+    uim_COMPONENT_RULE        = 0x0001000Du,
+    uim_COMPONENT_GAME_DPI    = 0x0001000Eu
 };
 
 enum {
@@ -149,7 +150,8 @@ enum {
     uim_PROPERTY_AMOUNT      = 14u,
     uim_PROPERTY_RADIUS      = 15u,
     uim_PROPERTY_TAG         = 16u,
-    uim_PROPERTY_TARGET_PAGE = 17u
+    uim_PROPERTY_TARGET_PAGE = 17u,
+    uim_PROPERTY_MULTIPLIER  = 18u
 };
 
 /* Rule 数据（M3）：trigger / selector / effect 都由整数枚举承载，
@@ -177,9 +179,9 @@ enum {
  * y 相差零点几像素。 */
 #define uim_RULE_ALIGN_TOLERANCE 8.0
 
-/* Register the thirteen builtin component descriptors below (10 visual
- * primitives + Motion/Health/Rule). Idempotent: an already-registered type is
- * left untouched. */
+/* Register the fourteen builtin component descriptors below (10 visual
+ * primitives + Motion/Health/Rule + GameDPI). Idempotent: an already-registered
+ * type is left untouched. */
 uim_Result uim_component_registry_register_builtins(uim_ComponentRegistry *registry);
 const uim_ComponentTypeDesc *uim_component_registry_builtin_desc(uim_ComponentTypeId type_id);
 

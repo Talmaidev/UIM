@@ -14,6 +14,7 @@
 #include "zcsr_ui_page_manager/ui_game_settings.h"
 #include "zcsr/ui.h"
 #include "zcsr/input.h"
+#include "uim_text_layout.h"
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
@@ -135,8 +136,21 @@ static inline bool point_in_rect(int px, int py, ms_rect r) {
            (float)py >= r.y && (float)py < r.y + r.h;
 }
 
+/* One advance rule for measuring and wrapping panel text. The settings page
+ * draws with an 8px cell (scaled), so every code point advances the same;
+ * CJK is one code point, not three bytes. */
+static float ms_text_advance(void* user, uint32_t codepoint) {
+    float scale = *(const float*)user;
+    (void)codepoint;
+    return 8.0f * scale;
+}
+
 static inline float text_w(const char* s, float scale) {
-    return (float)strlen(s) * 8.0f * scale;
+    float width = 0.0f;
+    if (!s || !s[0]) return 0.0f;
+    if (uim_text_measure(s, strlen(s), ms_text_advance, &scale, &width) != uim_OK)
+        return 0.0f;
+    return width;
 }
 
 static inline zcsr_game_settings_tab* cur_tab(zcsr_game_settings* s) {
@@ -382,7 +396,7 @@ zcsr_game_settings* zcsr_game_settings_create(void* buf, size_t bytes, const zcs
     s->width       = (cfg->width > 0) ? cfg->width : 900;
     s->height      = (cfg->height > 0) ? cfg->height : 600;
     s->item_height = (cfg->item_height > 0) ? cfg->item_height : 32;
-    s->text_scale  = (cfg->text_scale > 0.0f) ? cfg->text_scale : 1.4f;
+    s->text_scale  = (cfg->text_scale > 0.0f) ? cfg->text_scale : 1.0f;  /* 96-DPI neutral */
 
     /* computed layout (with boundary protection) */
     ms_recompute_layout(s);
@@ -750,39 +764,33 @@ int zcsr_game_settings_handle_key(zcsr_game_settings* s, zcsr_keycode key, zcsr_
     return 0;
 }
 
-/* ---- 简单换行 (按空格拆分, 最多 max_lines) ---- */
+/* ---- 换行：UIM 公共 text-layout 原子（按空格/连字符/CJK 断行） ---- */
 static int wrap_text(const char* text, float max_w, float scale,
                      char lines[][128], int max_lines) {
-    if (!text || !text[0]) return 0;
-    int n = 0;
-    const char* p = text;
-    char line[128];
-    int line_len = 0;
-    line[0] = '\0';
-
-    while (*p && n < max_lines) {
-        /* copy word */
-        char word[64];
-        int wl = 0;
-        while (*p && *p != ' ' && wl < 63) { word[wl++] = *p++; }
-        word[wl] = '\0';
-        if (*p == ' ') p++;
-
-        int new_len = line_len + (line_len > 0 ? 1 : 0) + wl;
-        if (new_len > 0 && (float)new_len * 8.0f * scale > max_w && line_len > 0) {
-            strncpy(lines[n], line, 127); lines[n][127] = '\0';
-            n++;
-            line[0] = '\0'; line_len = 0;
+    uim_TextLine meta[8];
+    size_t count;
+    bool truncated = false;
+    uim_Result rc;
+    int i;
+    if (!text || !text[0] || max_lines <= 0) return 0;
+    if (max_lines > 8) max_lines = 8;   /* panel never asks for more than 6 */
+    count = (size_t)max_lines;
+    rc = uim_text_wrap(text, strlen(text), max_w, ms_text_advance, &scale,
+                       (size_t)max_lines, meta, &count, &truncated);
+    if (rc != uim_OK && rc != uim_ERR_BUFFER) return 0;
+    (void)truncated;
+    for (i = 0; i < (int)count; i++) {
+        size_t n = meta[i].byte_length;
+        size_t start = meta[i].byte_start;
+        if (n > 127u) {
+            n = 127u;
+            /* never end a line in the middle of a UTF-8 sequence */
+            while (n > 0u && (((unsigned char)text[start + n]) & 0xC0u) == 0x80u) n--;
         }
-        if (line_len > 0) { line[line_len++] = ' '; }
-        memcpy(line + line_len, word, wl + 1);
-        line_len += wl;
+        memcpy(lines[i], text + start, n);
+        lines[i][n] = '\0';
     }
-    if (line_len > 0 && n < max_lines) {
-        strncpy(lines[n], line, 127); lines[n][127] = '\0';
-        n++;
-    }
-    return n;
+    return i;
 }
 
 /* ---- 绘制下拉箭头 (V 形) ---- */

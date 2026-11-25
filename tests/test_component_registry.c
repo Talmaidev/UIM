@@ -1,9 +1,11 @@
-/* Contract test for the 13 builtin UIM component descriptors. The registry is
+/* Contract test for the 14 builtin UIM component descriptors. The registry is
  * the single owner of component identity/schema in the editor stack; this test
  * fails if a builtin is lost, duplicated, or registered without a usable
  * property surface. */
 #include "uim_component_registry.h"
+#include "uim_input_scale.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -19,7 +21,7 @@ int main(void) {
         uim_COMPONENT_SLIDER, uim_COMPONENT_DROPDOWN, uim_COMPONENT_LABEL,
         uim_COMPONENT_SEPARATOR, uim_COMPONENT_IMAGE, uim_COMPONENT_TEXT_INPUT,
         uim_COMPONENT_SCROLL_VIEW, uim_COMPONENT_MOTION, uim_COMPONENT_HEALTH,
-        uim_COMPONENT_RULE
+        uim_COMPONENT_RULE, uim_COMPONENT_GAME_DPI
     };
     const size_t expected_count = sizeof(expected) / sizeof(expected[0]);
     uim_ComponentRegistryConfig config;
@@ -62,6 +64,11 @@ int main(void) {
         CHECK(desc.property_count >= 1u); /* HP */
         CHECK(uim_component_registry_get(registry, uim_COMPONENT_RULE, &desc) == uim_OK);
         CHECK(desc.property_count >= 3u); /* TRIGGER/SELECTOR/EFFECT */
+        CHECK(uim_component_registry_get(registry, uim_COMPONENT_GAME_DPI, &desc) == uim_OK);
+        CHECK(desc.property_count == 1u); /* multiplier only */
+        CHECK(desc.properties[0].property_id == uim_PROPERTY_MULTIPLIER);
+        CHECK(fabs(desc.properties[0].numeric_min - uim_INPUT_SCALE_SENSITIVITY_MIN) < 1e-6);
+        CHECK(fabs(desc.properties[0].numeric_max - uim_INPUT_SCALE_SENSITIVITY_MAX) < 1e-6);
     }
 
     if (failures == 0) printf("UIM component registry contract: ALL PASS (%zu types)\n",

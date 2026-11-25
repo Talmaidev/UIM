@@ -13,6 +13,7 @@
  * （它们是字面量或长生命周期字符串）。
  */
 #include "uim_component_registry.h"
+#include "uim_input_scale.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -374,6 +375,14 @@ static const uim_ComponentPropertyDesc k_rule_props[] = {
              uim_INSPECTOR_NUMBER, 0.0, 1000.0, 1.0)
 };
 
+/* Game DPI：唯一的可编辑值是倍率；驱动 DPI 由宿主在初始化时提供。
+ * game_dpi = driver_dpi * multiplier，只缩放相对位移，不改系统指针速度。 */
+static const uim_ComponentPropertyDesc k_gamedpi_props[] = {
+    PROP_FLOAT(uim_PROPERTY_MULTIPLIER, "multiplier", "Multiplier", 1.0, 0u,
+               uim_INSPECTOR_NUMBER,
+               uim_INPUT_SCALE_SENSITIVITY_MIN, uim_INPUT_SCALE_SENSITIVITY_MAX, 0.01)
+};
+
 #define COMPONENT(id, key, name, category, flags, props) \
     { (uint32_t)sizeof(uim_ComponentTypeDesc), (id), 1u, (flags), (key), (name), (category), \
       (props), sizeof(props) / sizeof((props)[0]) }
@@ -404,7 +413,9 @@ static const uim_ComponentTypeDesc k_builtin_descs[] = {
     COMPONENT(uim_COMPONENT_HEALTH, "builtin.health", "Health", "Behavior",
               uim_COMPONENT_FLAG_SINGLETON_PER_NODE, k_health_props),
     COMPONENT(uim_COMPONENT_RULE, "builtin.rule", "Rule", "Behavior",
-              uim_COMPONENT_FLAG_SINGLETON_PER_NODE, k_rule_props)
+              uim_COMPONENT_FLAG_SINGLETON_PER_NODE, k_rule_props),
+    COMPONENT(uim_COMPONENT_GAME_DPI, "builtin.game_dpi", "Game DPI", "Input",
+              uim_COMPONENT_FLAG_SINGLETON_PER_NODE, k_gamedpi_props)
 };
 
 uim_Result uim_component_registry_register_builtins(uim_ComponentRegistry *registry) {

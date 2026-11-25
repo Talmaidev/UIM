@@ -11,3 +11,82 @@ scope
 - pages
 - settings
 - tests
+
+
+2026-11-24
+- add uim_input_scale: window-API pointer -> UI logical units with game-input
+  sensitivity applied to deltas only; never touches driver or DPI awareness
+- add uim_text_input: UTF-8 editable text component with code-point caret,
+  selection, maxLength, focus baseline, submit/cancel and uim_Value handoff
+- move uim_Selection out of the editor into UIM (uim_selection.h): public
+  64-id value type, stack init/reset, heap create/destroy kept;
+  register uim_selection_contract
+- make text editing single-source: uim_text_input.c now includes
+  zcsr/ui_text_edit.h, the same header the engine widget uses, so UIM carries
+  no second caret/selection/UTF-8/maxLength implementation
+- settings page text_scale default 1.4 -> 1.0: the runtime now passes the
+  platform dpi_scale (96 DPI = 1.0) instead of a hard-coded multiplier
+- register uim_input_scale_contract, uim_text_input_contract and
+  uim_selection_contract; standalone CTest 8/8 (Windows Release, VS 18 2026)
+- add uim_text_input_set_selection / uim_text_input_move_cursor_extend:
+  explicit anchor+cursor selection and Shift+Arrow extension without
+  introducing a second text state; UTF-8 offsets remain code-point validated
+- extend the C++20 and C++14 consumer contracts to call the new selection
+  APIs, proving the additions stay inside the C ABI
+- add 15 header-only atoms: types, color, layout, theme, text_layout, scroll,
+  focus, placement, format, progress, virtual_list, anim, tabs, toast, drag.
+  Each is its own INTERFACE target (zcsr_uim_atom_<name>); zcsr_uim_atoms links
+  all of them, so consumers pick only what they use. No archive, no allocation.
+- uim_component_manager.h now includes uim_types.h: uim_Result/uim_Rect have
+  one definition shared by the manager and every atom
+- zcsr/ui_text_edit.h exposes zcsr_text_utf8_codepoint (decode returns the code
+  point, not just the sequence length); uim_text_layout.h reuses it, so UIM
+  still carries no second UTF-8 decoder
+- settings page drops its private strlen*8 text_w and space-only wrap_text;
+  both now call uim_text_measure/uim_text_wrap with one 8px advance callback.
+  ASCII layout is unchanged; CJK is counted per glyph instead of per byte
+- register uim_atoms_contract; standalone CTest 9/9 (Windows Release, VS 18 2026)
+- add tests/test_cpp_consumer.cpp and uim_cpp_consumer_contract: a C++20 TU
+  includes the public headers, calls manager/text-input/selection/input-scale/
+  layout/format/text-layout APIs and links zcsr_uim_component, so a missing
+  extern "C" or a C-only header construct fails at build or link time. The
+  target is built only when UIM is top-level and a C++ compiler exists; a pure-C
+  parent that add_subdirectory(UIM) never turns on CXX
+- add uim_cpp_consumer_cxx14_contract: the same TU at C++14; proves the headers
+  do not require C++20 (C++20 remains the strictest probe)
+- add tests/test_atoms_stress.c (uim_atoms_stress_contract): deterministic LCG
+  property checks for layout/grid, UTF-8 wrap ranges, clamped scroll offsets,
+  placement containment, focus cycling, tween/queue/drag state
+- uim_focus_set_items rejects duplicate ids (uim_ERR_EXISTS) and leaves the ring
+  unchanged; uim_tween_start resets loop/ping_pong instead of inheriting two
+  uninitialized flags from the caller's struct
+- standalone CTest 13/13 (Windows Release, VS 18 2026); ASan build of atoms and
+  atoms_stress passes
+
+2026-11-24 (editor-gap audit)
+- audit zcsr_editor and PVZ against UIM; seven generic editor atoms added, all
+  header-only, pure C, additive to the existing atom set (no existing API or
+  semantics changed)
+- add uim_numeric_field: clamped int/float field with step, drag delta, strict
+  full-string parse, commit/revert baseline and read-only rejection
+- add uim_dialog: bounded modal/non-modal dialog stack, accepted/cancelled/
+  closed results, Esc cancel-top, focus save/restore when the stack drains
+- add uim_menu: flat item model shared by menu bars, dropdowns and right-click
+  context menus; open header, hover, wrap/skip-disabled keyboard step, hit test
+- add uim_tree: caller-id expand/collapse set and primary selection, decoupled
+  from node data and file IO
+- add uim_tooltip: hover-delay show/hide and re-trigger; popup placement stays
+  with uim_placement
+- add uim_property_row: label/editor row split plus enabled/read-only
+  interaction state for inspector rows
+- add uim_splitter: sash ratio with per-pane minimum sizes; pane geometry
+  delegates to uim_layout_split
+- register the seven atoms as zcsr_uim_atom_<name> INTERFACE targets; property_row
+  and splitter link layout; all are exported through zcsr_uim_atoms and the
+  install target list
+- extend tests/test_atoms.c with one contract section per new atom; extend
+  tests/test_atoms_stress.c with clamped numeric and splitter-ratio invariants;
+  extend tests/test_cpp_consumer.cpp to instantiate the new headers from C++
+- deferred to consumers / out of UIM scope: color picker palette, docking
+  workspace, drag-drop payload types, status-bar text slots (see
+  docs/UIM_COMPONENT_GAP_AUDIT.md)

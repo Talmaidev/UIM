@@ -1,4 +1,70 @@
 cmake_minimum_required(VERSION 3.16)
+
+# --- Hard guard: the build tree must live OUTSIDE the source tree ------------
+# Repositories under C:\Users\chen\Documents\GitHub (and their Linux checkouts)
+# must stay free of build output: no in-source builds, no in-repo build/ or
+# build-*/ directories, no scratch CMakeCache.txt. This is enforced here at
+# configure time so a stale command line cannot silently re-pollute the tree.
+#
+# Guard interval: CMAKE_BINARY_DIR == CMAKE_SOURCE_DIR, or CMAKE_BINARY_DIR is
+# located underneath CMAKE_SOURCE_DIR. Comparison is case-insensitive on
+# Windows (paths there are case-insensitive) and separator-aware, so a sibling
+# directory whose name merely starts with the source path is still allowed.
+if(CMAKE_BINARY_DIR)
+  # Normalise to forward slashes first (file(TO_CMAKE_PATH) exists since 3.16,
+  # unlike cmake_path, which would raise the minimum CMake version).
+  file(TO_CMAKE_PATH "${CMAKE_SOURCE_DIR}" _zcsr_guard_src)
+  file(TO_CMAKE_PATH "${CMAKE_BINARY_DIR}" _zcsr_guard_bin)
+  if(WIN32)
+    string(TOLOWER "${_zcsr_guard_src}" _zcsr_guard_src_cmp)
+    string(TOLOWER "${_zcsr_guard_bin}" _zcsr_guard_bin_cmp)
+  else()
+    set(_zcsr_guard_src_cmp "${_zcsr_guard_src}")
+    set(_zcsr_guard_bin_cmp "${_zcsr_guard_bin}")
+  endif()
+  string(LENGTH "${_zcsr_guard_src_cmp}" _zcsr_guard_src_len)
+  string(SUBSTRING "${_zcsr_guard_bin_cmp}" 0 ${_zcsr_guard_src_len}
+         _zcsr_guard_bin_head)
+  set(_zcsr_guard_in_repo FALSE)
+  if(_zcsr_guard_bin_cmp STREQUAL _zcsr_guard_src_cmp)
+    set(_zcsr_guard_in_repo TRUE)
+  elseif(_zcsr_guard_bin_head STREQUAL _zcsr_guard_src_cmp)
+    string(SUBSTRING "${_zcsr_guard_bin_cmp}" ${_zcsr_guard_src_len} 1
+           _zcsr_guard_sep)
+    if(_zcsr_guard_sep STREQUAL "/" OR _zcsr_guard_sep STREQUAL "\\")
+      set(_zcsr_guard_in_repo TRUE)
+    endif()
+  endif()
+  if(_zcsr_guard_in_repo)
+    message(FATAL_ERROR
+      "In-repo build directory refused by ZCSR build-layout guard.\n"
+      "  CMAKE_SOURCE_DIR = ${CMAKE_SOURCE_DIR}\n"
+      "  CMAKE_BINARY_DIR = ${CMAKE_BINARY_DIR}\n"
+      "\n"
+      "Build trees must live outside the source tree: this repository (like\n"
+      "every repository under C:\\Users\\chen\\Documents\\GitHub) must stay clean.\n"
+      "Put the build tree at one of these instead:\n"
+      "  Windows: C:\\Users\\chen\\Documents\\build\\zcsr\\UIM\\<preset>\n"
+      "  Linux:   /home/chen/zcsr-builds/UIM/<preset>\n"
+      "\n"
+      "Example (Windows, Visual Studio generator):\n"
+      "  cmake -S . -B \"C:\\Users\\chen\\Documents\\build\\zcsr\\UIM\\win-msvc\" -G \"Visual Studio 18 2026\"\n"
+      "Example (Linux):\n"
+      "  cmake -S . -B /home/chen/zcsr-builds/UIM/linux-gcc\n"
+      "\n"
+      "If an old in-repo build directory already exists, delete it and use the\n"
+      "layout above; see C:\\Users\\chen\\Documents\\build\\_reports\\BUILD_LAYOUT.md.\n")
+  endif()
+  unset(_zcsr_guard_src)
+  unset(_zcsr_guard_bin)
+  unset(_zcsr_guard_src_cmp)
+  unset(_zcsr_guard_bin_cmp)
+  unset(_zcsr_guard_src_len)
+  unset(_zcsr_guard_bin_head)
+  unset(_zcsr_guard_sep)
+  unset(_zcsr_guard_in_repo)
+endif()
+
 project(zcsr_uim VERSION 1.0.0 LANGUAGES C)
 
 include(GNUInstallDirs)
@@ -24,6 +90,12 @@ endif()
 # The engine is not added as a subdirectory here; link/install later.
 
 set(ZCSR_ENGINE_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../zero-coupling-signal-router/include" CACHE PATH "Path to zero-coupling-signal-router/include")
+# A parent project (runtime/editor) may have created this cache entry as empty;
+# an empty path would silently drop the engine headers that
+# uim_text_input.c needs for zcsr/ui_text_edit.h. Fall back to the sibling repo.
+if(NOT ZCSR_ENGINE_INCLUDE)
+  set(ZCSR_ENGINE_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../zero-coupling-signal-router/include")
+endif()
 
 # Explicit component source list: zcsr_uim_component is the core UI instance
 # model only. Page/node document APIs live in zcsr_uim_document. Project
@@ -32,7 +104,11 @@ set(ZCSR_ENGINE_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../zero-coupling-signal-rou
 set(UIM_COMPONENT_SOURCES
     src/uim_component_manager.c
     src/uim_component_manager_lifecycle.c
-    src/uim_component_registry.c)
+    src/uim_component_registry.c
+    src/uim_game_dpi.c
+    src/uim_input_scale.c
+    src/uim_text_input.c
+    src/uim_selection.c)
 add_library(zcsr_uim_component STATIC ${UIM_COMPONENT_SOURCES})
 add_library(zcsr_uim_core ALIAS zcsr_uim_component)
 target_include_directories(zcsr_uim_component PUBLIC
@@ -116,8 +192,44 @@ if(ZCSR_UIM_WITH_PAGE_MANAGER)
   endif()
 endif()
 
+# --- Header-only atoms: pick only what you use --------------------------------
+# Every atom is an independent INTERFACE target with no archive and no link
+# dependency: a page that only needs layout links zcsr_uim_atom_layout, a host
+# that wants the full kit links zcsr_uim_atoms. Cross-atom edges exist only
+# where one header includes another (theme->color, scroll->layout,
+# text_layout->types + the engine's UTF-8 decoder).
+set(UIM_ATOMS types color layout theme text_layout scroll focus placement
+              format progress virtual_list anim tabs toast drag
+              button toggle slider dropdown stepper
+              numeric_field dialog menu tree tooltip property_row splitter)
+set(UIM_ATOM_TARGETS)
+foreach(atom ${UIM_ATOMS})
+  add_library(zcsr_uim_atom_${atom} INTERFACE)
+  target_include_directories(zcsr_uim_atom_${atom} INTERFACE
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+  list(APPEND UIM_ATOM_TARGETS zcsr_uim_atom_${atom})
+endforeach()
+foreach(atom ${UIM_ATOMS})
+  if(NOT atom STREQUAL "types")
+    target_link_libraries(zcsr_uim_atom_${atom} INTERFACE zcsr_uim_atom_types)
+  endif()
+endforeach()
+target_link_libraries(zcsr_uim_atom_theme INTERFACE zcsr_uim_atom_color)
+target_link_libraries(zcsr_uim_atom_scroll INTERFACE zcsr_uim_atom_layout)
+target_link_libraries(zcsr_uim_atom_drag INTERFACE zcsr_uim_atom_layout)
+target_link_libraries(zcsr_uim_atom_property_row INTERFACE zcsr_uim_atom_layout)
+target_link_libraries(zcsr_uim_atom_splitter INTERFACE zcsr_uim_atom_layout)
+if(ZCSR_ENGINE_INCLUDE)
+  target_include_directories(zcsr_uim_atom_text_layout INTERFACE
+      $<BUILD_INTERFACE:${ZCSR_ENGINE_INCLUDE}>)
+endif()
+add_library(zcsr_uim_atoms INTERFACE)
+target_link_libraries(zcsr_uim_atoms INTERFACE ${UIM_ATOM_TARGETS})
+
 # --- Install / export package -------------------------------------------------
-set(UIM_INSTALL_TARGETS zcsr_uim zcsr_uim_component zcsr_uim_document zcsr_uim_project)
+set(UIM_INSTALL_TARGETS zcsr_uim zcsr_uim_component zcsr_uim_document zcsr_uim_project
+    ${UIM_ATOM_TARGETS} zcsr_uim_atoms)
 if(ZCSR_UIM_WITH_PAGE_MANAGER)
   list(APPEND UIM_INSTALL_TARGETS zcsr_ui_page_manager)
 endif()
@@ -171,6 +283,75 @@ target_include_directories(component_registry_test PRIVATE ${CMAKE_CURRENT_SOURC
 target_link_libraries(component_registry_test PRIVATE zcsr_uim)
 add_test(NAME component_registry_contract COMMAND component_registry_test)
 
+# Input contract: window-API pointer -> logical units plus game sensitivity,
+# and the editable text component with strict data handoff.
+add_executable(input_scale_test tests/test_input_scale.c)
+target_include_directories(input_scale_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(input_scale_test PRIVATE zcsr_uim_component)
+add_test(NAME uim_input_scale_contract COMMAND input_scale_test)
+
+add_executable(text_input_test tests/test_text_input.c)
+target_include_directories(text_input_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(text_input_test PRIVATE zcsr_uim_component)
+add_test(NAME uim_text_input_contract COMMAND text_input_test)
+
+add_executable(game_dpi_test tests/test_game_dpi.c)
+target_include_directories(game_dpi_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(game_dpi_test PRIVATE zcsr_uim_component)
+add_test(NAME uim_game_dpi_contract COMMAND game_dpi_test)
+
+add_executable(selection_test tests/test_selection.c)
+target_include_directories(selection_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(selection_test PRIVATE zcsr_uim_component)
+add_test(NAME uim_selection_contract COMMAND selection_test)
+
+# One contract test for all header-only atoms: geometry, text layout, scroll,
+# focus, placement, formatting, progress, virtual list, easing, tabs, toasts.
+add_executable(atoms_test tests/test_atoms.c)
+target_link_libraries(atoms_test PRIVATE zcsr_uim_atoms)
+add_test(NAME uim_atoms_contract COMMAND atoms_test)
+
+add_executable(atoms_stress_test tests/test_atoms_stress.c)
+target_link_libraries(atoms_stress_test PRIVATE zcsr_uim_atoms)
+add_test(NAME uim_atoms_stress_contract COMMAND atoms_stress_test)
+
+# Header-only atoms use hypotf/fmodf/powf/floorf/ceilf. On Unix these live in
+# libm; MSVC and Apple's libSystem resolve them without a separate link item.
+if(UNIX AND NOT APPLE)
+  target_link_libraries(atoms_test PRIVATE m)
+  target_link_libraries(atoms_stress_test PRIVATE m)
+endif()
+
+# C++ consumption contract: UIM is C11, but its public headers are included by
+# C++ consumers (the editor). Build this only when UIM is the top-level project
+# so adding UIM to a pure-C parent never turns on a C++ language requirement.
+set(ZCSR_UIM_CPP_TEST_AVAILABLE OFF)
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  include(CheckLanguage)
+  check_language(CXX)
+  if(CMAKE_CXX_COMPILER)
+    enable_language(CXX)
+    add_executable(cpp_consumer_test tests/test_cpp_consumer.cpp)
+    set_target_properties(cpp_consumer_test PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(cpp_consumer_test PRIVATE zcsr_uim_component zcsr_uim_atoms)
+    add_test(NAME uim_cpp_consumer_contract COMMAND cpp_consumer_test)
+
+    # Same source at C++14: proves the public C headers do not require C++20.
+    add_executable(cpp_consumer_cxx14_test tests/test_cpp_consumer.cpp)
+    set_target_properties(cpp_consumer_cxx14_test PROPERTIES
+        CXX_STANDARD 14
+        CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(cpp_consumer_cxx14_test PRIVATE zcsr_uim_component zcsr_uim_atoms)
+    add_test(NAME uim_cpp_consumer_cxx14_contract COMMAND cpp_consumer_cxx14_test)
+
+    set(ZCSR_UIM_CPP_TEST_AVAILABLE ON)
+  else()
+    message(STATUS "UIM: no C++ compiler; cpp consumer contract test skipped")
+  endif()
+endif()
+
 # Link-boundary guards: component-only consumers must not need page/node
 # symbols, and document consumers must get the page/node implementation.
 add_executable(component_boundary_test tests/test_component_boundary.c)
@@ -209,7 +390,13 @@ endif()
 # Every UIM test can be selected independently by module label.
 set(ZCSR_UIM_TESTS
     component_registry_contract uim_component_boundary
-    uim_document_boundary uim_file_service_abi)
+    uim_document_boundary uim_file_service_abi
+    uim_input_scale_contract uim_text_input_contract
+    uim_game_dpi_contract
+    uim_selection_contract uim_atoms_contract uim_atoms_stress_contract)
+if(ZCSR_UIM_CPP_TEST_AVAILABLE)
+  list(APPEND ZCSR_UIM_TESTS uim_cpp_consumer_contract uim_cpp_consumer_cxx14_contract)
+endif()
 if(ZCSR_UIM_WITH_PAGE_MANAGER)
   list(APPEND ZCSR_UIM_TESTS page_manager)
 endif()

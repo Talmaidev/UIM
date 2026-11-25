@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "uim_types.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,12 +34,6 @@ typedef uint32_t uim_PropertyId;
 #define uim_BINDING_INVALID ((uim_BindingId)0)
 #define uim_ACTION_INVALID ((uim_ActionId)0)
 
-typedef enum uim_Result {
-    uim_OK=0, uim_ERR_ARGUMENT, uim_ERR_NOMEM, uim_ERR_NOT_FOUND,
-    uim_ERR_EXISTS, uim_ERR_TYPE, uim_ERR_STATE, uim_ERR_RANGE,
-    uim_ERR_STALE, uim_ERR_BUFFER, uim_ERR_UNSUPPORTED
-} uim_Result;
-
 typedef enum uim_ValueType { uim_VALUE_NONE=0, uim_VALUE_BOOL, uim_VALUE_INT64, uim_VALUE_FLOAT64, uim_VALUE_STRING } uim_ValueType;
 typedef struct uim_Value {
     uim_ValueType type;
@@ -53,7 +48,7 @@ bool uim_value_equal(uim_Value a, uim_Value b);
  * mutating the manager or destroying it. uim_Event string payloads are owned by
  * the event and must be released with uim_event_dispose(). */
 
-typedef struct uim_Rect { float x,y,width,height; } uim_Rect;
+/* uim_Rect / uim_Point / uim_Insets come from uim_types.h. */
 /* Legacy document placement space. A node may carry a projected placement
  * transform for editing a 2.5D document; this is not a 3D scene model and it
  * must not be used to create a 3D renderer. Existing 2D callers leave space

@@ -101,7 +101,7 @@ typedef struct {
     int          width;       /* 面板总宽度 (含右侧信息栏) */
     int          height;      /* 面板总高度 (含标签栏+底部按钮) */
     int          item_height; /* 每项高度 (默认 32) */
-    float        text_scale;  /* 文字缩放 (默认 1.4) */
+    float        text_scale;  /* 文字缩放；运行时传平台 dpi_scale（96 DPI = 1.0） */
 } zcsr_game_settings_config;
 
 typedef struct zcsr_game_settings zcsr_game_settings; /* 不透明 */

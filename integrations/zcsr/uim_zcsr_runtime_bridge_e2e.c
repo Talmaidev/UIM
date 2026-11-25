@@ -4,6 +4,7 @@
 #include "zcsr/ui_button.h"
 #include "zcsr/ui_toggle.h"
 #include "zcsr/ui_slider.h"
+#include "zcsr/ui_text_input.h"
 #include "uim_component_manager.h"
 #include "uim_component_registry.h"
 #include "uim_zcsr_runtime_bridge.h"
@@ -46,6 +47,7 @@ int main(void)
     /* Register properties. */
     uim_property_register(ur, 1, uim_value_bool(false));   /* shadows */
     uim_property_register(ur, 2, uim_value_float(50.0));   /* volume */
+    uim_property_register(ur, 3, uim_value_string("", 0)); /* text input */
 
     /* Create UIR nodes matching ZCSR. */
     uim_NodeDesc nd;
@@ -199,6 +201,51 @@ int main(void)
             CHECK(zn != ZCSR_NODE_INVALID);
             CHECK(zcsr_node_get_component_id(zui, zn, &zc) == ZCSR_OK);
             CHECK(zc == (ZCSR_ComponentId)(ZCSR_COMPONENT_PANEL + (ZCSR_ComponentId)i));
+        }
+
+        /* Text input: the engine emits TEXT_CHANGED for typed bytes; the bridge
+         * must turn that into a UIM string value, not swallow the event. */
+        {
+            uim_NodeDesc td = d;
+            uim_NodeId uti = uim_NODE_INVALID;
+            uim_BindingId text_binding;
+            uim_BindingDesc tb;
+            uim_SettingState text_state;
+            ZCSR_NodeId zti;
+            ZCSR_Input text_in;
+            td.stable_key = "text_input";
+            td.component_id = uim_COMPONENT_TEXT_INPUT;
+            td.local_rect.x = 10.0f;
+            td.local_rect.y = 300.0f;
+            td.local_rect.width = 160.0f;
+            td.local_rect.height = 24.0f;
+            CHECK(uim_node_create(ur, &td, &uti) == uim_OK);
+            memset(&tb, 0, sizeof(tb));
+            tb.node_id = uti;
+            tb.property_id = 3;
+            tb.value_type = uim_VALUE_STRING;
+            tb.direction = uim_BIND_READ_WRITE;
+            tb.initial_sync = uim_SYNC_INITIAL_ONLY;
+            tb.state = uim_BINDING_ACTIVE;
+            CHECK(uim_binding_create(ur, &tb, &text_binding) == uim_OK);
+            CHECK(uim_zcsr_runtime_bridge_sync_page(&UIM_ZcsrRuntimeBridge, page2) == uim_OK);
+            zti = uim_zcsr_runtime_bridge_find_zcsr(&UIM_ZcsrRuntimeBridge, uti);
+            CHECK(zti != ZCSR_NODE_INVALID);
+            CHECK(zcsr_ui_set_focus(zui, zti) == ZCSR_OK);
+            memset(&text_in, 0, sizeof(text_in));
+            text_in.type = ZCSR_INPUT_TEXT;
+            text_in.text_utf8 = "42";
+            text_in.text_bytes = 2u;
+            CHECK(zcsr_ui_process_input(zui, &text_in) == ZCSR_OK);
+            UIM_ZcsrRuntimeBridge.events_forwarded = 0;
+            uim_zcsr_runtime_bridge_forward_zcsr_events(&UIM_ZcsrRuntimeBridge);
+            CHECK(UIM_ZcsrRuntimeBridge.events_forwarded == 1);
+            CHECK(uim_setting_get_state(ur, 3, &text_state) == uim_OK);
+            CHECK(text_state.dirty == true);
+            CHECK(text_state.pending.type == uim_VALUE_STRING);
+            CHECK(text_state.pending.as.string.size == 2u);
+            CHECK(text_state.pending.as.string.data != NULL);
+            CHECK(memcmp(text_state.pending.as.string.data, "42", 2u) == 0);
         }
 
         /* A 3D node must not become a 2D ZCSR widget. The editor draws it with
